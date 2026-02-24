@@ -12,6 +12,11 @@ This ROS 2 package launches the full local dev stack on one machine:
 - MoveIt (`ur_moveit_config`)
 - Unity → MoveIt Servo bridge
 
+## NOTICE
+
+VERY IMPORTANT NOTE: forward_position_controller defaults to inactive and joint_trajectory_controller to active
+joint_trajectory_controller is used when using rviz to plan, forward_position_controller is used by constantly updating position (the main thing used for the project)
+
 ## Build
 ```bash
 cd ~/ros2_ws
@@ -22,3 +27,4 @@ source install/setup.bash
 ```bash
 ros2 launch ur_unity_bringup ur3e_unity_bridge.launch.py
 ```
+
