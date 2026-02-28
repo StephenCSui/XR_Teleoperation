@@ -76,7 +76,7 @@ def generate_launch_description():
         DeclareLaunchArgument("ur_type", default_value="ur3e"),
         DeclareLaunchArgument("robot_ip", default_value="127.0.0.1"),
         DeclareLaunchArgument("use_fake_hardware", default_value="true"),
-        DeclareLaunchArgument("initial_joint_controller", default_value="joint_trajectory_controller"),
+        DeclareLaunchArgument("initial_joint_controller", default_value="scaled_joint_trajectory_controller"),
 
         DeclareLaunchArgument("ros_ip", default_value="127.0.0.1"),
         DeclareLaunchArgument("ros_tcp_port", default_value="10000"),
