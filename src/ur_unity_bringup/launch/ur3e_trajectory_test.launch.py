@@ -51,7 +51,7 @@ def generate_launch_description():
         DeclareLaunchArgument("robot_ip", default_value="127.0.0.1"),
         DeclareLaunchArgument("use_fake_hardware", default_value="true"),
         DeclareLaunchArgument("launch_rviz", default_value="true"),
-        DeclareLaunchArgument("initial_joint_controller", default_value="joint_trajectory_controller"),
+        DeclareLaunchArgument("initial_joint_controller", default_value="scaled_joint_trajectory_controller"),
 
         DeclareLaunchArgument("test_delay_s", default_value="5.0"),
         DeclareLaunchArgument("check_starting_point", default_value="true"),
