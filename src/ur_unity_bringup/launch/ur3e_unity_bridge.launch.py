@@ -28,7 +28,7 @@ def generate_launch_description():
             "ur_type": ur_type,
             "robot_ip": robot_ip,
             "use_fake_hardware": use_fake_hardware,
-            "launch_rviz": "false",
+            "launch_rviz": "true",
             "initial_joint_controller": initial_joint_controller,
         }.items(),
     )
@@ -55,20 +55,35 @@ def generate_launch_description():
         }.items(),
     )
 
-    bridge = Node(
+    ee_tf_to_pose = Node(
         package="ur_unity_bringup",
-        executable="unity_pose_to_servo_twist",
-        name="unity_pose_to_servo_twist",
+        executable="ee_tf_to_pose",
+        name="ee_tf_to_pose",
+        output="screen",
+    )
+
+    kinematics_yaml = PathJoinSubstitution([ur_moveit_share, "config", "kinematics.yaml"])
+
+    authority_filter = Node(
+        package="unity_authority_filter_cpp",
+        executable="unity_authority_filter",
+        name="unity_authority_filter",
         output="screen",
         parameters=[
-            {"unity_pose_topic": "/unity/target_pose"},
-            {"servo_twist_topic": "/servo_node/delta_twist_cmds"},
-            {"output_frame": "base_link"},
-            {"rate_hz": 60.0},
-            {"pos_gain": 1.2},
-            {"yaw_gain": 1.2},
-            {"max_lin_vel": 0.12},
-            {"max_ang_vel": 0.12},
+            kinematics_yaml,
+            {"hand_topic": "/unity/hand_pose"},
+            {"robot_ee_topic": "/robot/ee_pose"},
+            {"joint_states_topic": "/joint_states"},
+            {"command_topic": "/unity/command_pose"},
+            {"group_name": "ur_manipulator"},
+            {"ee_link": "tool0"},
+            {"base_frame": "base_link"},
+            {"rate_hz": 20.0},
+            {"ik_timeout_s": 0.02},
+            {"sigma_min_threshold": 0.02},
+            {"pos_step_m": 0.01},
+            {"yaw_step_deg": 5.0},
+            {"max_layers": 5},
         ],
     )
 
@@ -76,15 +91,16 @@ def generate_launch_description():
         DeclareLaunchArgument("ur_type", default_value="ur3e"),
         DeclareLaunchArgument("robot_ip", default_value="127.0.0.1"),
         DeclareLaunchArgument("use_fake_hardware", default_value="true"),
-        DeclareLaunchArgument("initial_joint_controller", default_value="joint_trajectory_controller"),
+        DeclareLaunchArgument("initial_joint_controller", default_value="forward_position_controller"),
 
         DeclareLaunchArgument("ros_ip", default_value="127.0.0.1"),
         DeclareLaunchArgument("ros_tcp_port", default_value="10000"),
 
-        DeclareLaunchArgument("moveit_launch_rviz", default_value="true"),
+        DeclareLaunchArgument("moveit_launch_rviz", default_value="false"),
 
         ur_control,
         ros_tcp_server,
         moveit,
-        bridge,
+        ee_tf_to_pose,
+        authority_filter,
     ])

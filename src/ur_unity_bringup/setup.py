@@ -28,6 +28,7 @@ setup(
     entry_points={
         'console_scripts': [
 		'unity_pose_to_servo_twist = ur_unity_bringup.unity_pose_to_servo_twist:main',
+        'ee_tf_to_pose = ur_unity_bringup.ee_tf_to_pose:main',
         ],
     },
 )
