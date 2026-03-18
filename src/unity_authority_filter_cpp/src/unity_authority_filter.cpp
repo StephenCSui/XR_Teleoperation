@@ -23,6 +23,15 @@ static double wrap_pi(double a)
   return a;
 }
 
+static geometry_msgs::msg::Point unity_to_ros_base(const geometry_msgs::msg::Point& u)
+{
+  geometry_msgs::msg::Point r;
+  r.x = u.z;    // Unity forward -> ROS forward
+  r.y = -u.x;   // Unity right   -> ROS left
+  r.z = u.y;    // Unity up      -> ROS up
+  return r;
+}
+
 struct RPY { double r, p, y; };
 
 static RPY quat_to_rpy(const geometry_msgs::msg::Quaternion& q)
@@ -155,10 +164,12 @@ private:
     PoseStamped out;
     out.header.stamp = now();
     out.header.frame_id = base_frame_;
-    out.pose.position = latest_hand_->pose.position;
+    out.pose.position = unity_to_ros_base(latest_hand_->pose.position);
 
-    const auto hand_rpy = quat_to_rpy(latest_hand_->pose.orientation);
-    yaw_hand_out = hand_rpy.y;
+    // const auto hand_rpy = quat_to_rpy(latest_hand_->pose.orientation);
+    // yaw_hand_out = hand_rpy.y;
+
+    yaw_hand_out = 0.0;
 
     out.pose.orientation = rpy_to_quat(nominal_roll_, nominal_pitch_, yaw_hand_out);
     return out;

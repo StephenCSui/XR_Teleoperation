@@ -87,11 +87,34 @@ def generate_launch_description():
         ],
     )
 
+    executor = Node(
+        package="unity_authority_filter_cpp",
+        executable="unity_goal_executor",
+        name="unity_goal_executor",
+        output="screen",
+        parameters=[
+            kinematics_yaml,
+            {
+                "command_topic": "/unity/command_pose",
+                "joint_states_topic": "/joint_states",
+                "group_name": "ur_manipulator",
+                "ee_link": "tool0",
+                "base_frame": "base_link",
+                "follow_action": "/joint_trajectory_controller/follow_joint_trajectory",
+                "exec_rate_hz": 15.0,
+                "traj_duration_s": 0.25,
+                "ik_timeout_s": 0.01,
+                "deadband_pos_m": 0.004,
+                "deadband_yaw_rad": 0.03,
+            },
+        ],
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument("ur_type", default_value="ur3e"),
         DeclareLaunchArgument("robot_ip", default_value="127.0.0.1"),
         DeclareLaunchArgument("use_fake_hardware", default_value="true"),
-        DeclareLaunchArgument("initial_joint_controller", default_value="forward_position_controller"),
+        DeclareLaunchArgument("initial_joint_controller", default_value="joint_trajectory_controller"),
 
         DeclareLaunchArgument("ros_ip", default_value="127.0.0.1"),
         DeclareLaunchArgument("ros_tcp_port", default_value="10000"),
@@ -103,4 +126,5 @@ def generate_launch_description():
         moveit,
         ee_tf_to_pose,
         authority_filter,
+        executor,
     ])
