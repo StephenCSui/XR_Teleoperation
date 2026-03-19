@@ -20,7 +20,7 @@ joint_trajectory_controller is used when using rviz to plan, forward_position_co
 ## Build
 ```bash
 cd ~/XR_Teleoperation
-colcon build --symlink-install --packages-select ur_unity_bringup
+colcon build --symlink-install
 source install/setup.bash
 ```
 ## Launch
