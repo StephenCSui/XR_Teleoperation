@@ -7,20 +7,17 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(moveit_core REQUIRED)
-find_package(moveit_ros_planning REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 add_executable(unity_authority_filter_servo src/unity_authority_filter_servo.cpp)
 ament_target_dependencies(unity_authority_filter_servo
   rclcpp
+  std_msgs
   geometry_msgs
-  sensor_msgs
-  moveit_core
-  moveit_ros_planning
 )
+
 target_include_directories(unity_authority_filter_servo SYSTEM PRIVATE ${EIGEN3_INCLUDE_DIRS})
 
 install(TARGETS

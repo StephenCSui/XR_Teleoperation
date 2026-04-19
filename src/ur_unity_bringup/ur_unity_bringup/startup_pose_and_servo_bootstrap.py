@@ -22,7 +22,7 @@ class StartupPoseAndServoBootstrap(Node):
             "startup_controller", "joint_trajectory_controller"
         ).value
         self.forward_controller = self.declare_parameter(
-            "forward_controller", "forward_position_controller"
+            "forward_controller", "forward_velocity_controller"
         ).value
 
         self.startup_action_name = self.declare_parameter(
@@ -201,7 +201,7 @@ class StartupPoseAndServoBootstrap(Node):
         req = SwitchController.Request()
         req.activate_controllers = [self.forward_controller]
         req.deactivate_controllers = [self.startup_controller]
-        req.strictness = SwitchController.Request.STRICT
+        req.strictness = SwitchController.Request.BEST_EFFORT
         req.activate_asap = True
         req.timeout = self._duration_msg(5.0)
 

@@ -6,10 +6,10 @@ from tf2_ros import Buffer, TransformListener
 class EeTfToPose(Node):
     def __init__(self):
         super().__init__("ee_tf_to_pose")
-        self.base_frame = "base_link"
-        self.ee_frame = "tool0"
-        self.out_topic = "/robot/ee_pose"
-        self.rate_hz = 60.0
+        self.base_frame = self.declare_parameter("base_frame", "base_link").value
+        self.ee_frame = self.declare_parameter("ee_frame", "tool0").value
+        self.out_topic = self.declare_parameter("topic_name", "/robot/ee_pose").value
+        self.rate_hz = float(self.declare_parameter("rate_hz", 60.0).value)
 
         self.pub = self.create_publisher(PoseStamped, self.out_topic, 10)
         self.tf_buffer = Buffer()

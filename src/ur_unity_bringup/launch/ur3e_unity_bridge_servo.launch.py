@@ -11,8 +11,7 @@ def generate_launch_description():
     robot_ip = LaunchConfiguration("robot_ip")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
 
-    startup_controller = LaunchConfiguration("startup_controller")
-    forward_controller = LaunchConfiguration("forward_controller")
+    initial_joint_controller = LaunchConfiguration("initial_joint_controller")
 
     ros_ip = LaunchConfiguration("ros_ip")
     ros_tcp_port = LaunchConfiguration("ros_tcp_port")
@@ -30,8 +29,8 @@ def generate_launch_description():
             "ur_type": ur_type,
             "robot_ip": robot_ip,
             "use_fake_hardware": use_fake_hardware,
-            "launch_rviz": "true",
-            "initial_joint_controller": startup_controller,
+            "launch_rviz": "false",
+            "initial_joint_controller": initial_joint_controller,
         }.items(),
     )
 
@@ -40,6 +39,7 @@ def generate_launch_description():
         executable="default_server_endpoint",
         name="ros_tcp_endpoint_unity",
         output="screen",
+        arguments=["--ros-args", "--log-level", "warn"],
         parameters=[
             {"ROS_IP": ros_ip},
             {"ROS_TCP_PORT": ros_tcp_port},
@@ -62,6 +62,7 @@ def generate_launch_description():
         executable="ee_tf_to_pose",
         name="ee_tf_to_pose",
         output="screen",
+        arguments=["--ros-args", "--log-level", "warn"],
         parameters=[
             {
                 "base_frame": "base_link",
@@ -72,38 +73,37 @@ def generate_launch_description():
         ],
     )
 
-    kinematics_yaml = PathJoinSubstitution(
-        [ur_moveit_share, "config", "kinematics.yaml"]
-    )
-
     authority_filter_servo = Node(
         package="unity_authority_filter_servo_cpp",
         executable="unity_authority_filter_servo",
         name="unity_authority_filter_servo",
         output="screen",
+        arguments=["--ros-args", "--log-level", "warn"],
         parameters=[
-            kinematics_yaml,
             {
                 "hand_topic": "/unity/hand_pose",
                 "robot_ee_topic": "/robot/ee_pose",
-                "joint_states_topic": "/joint_states",
                 "command_topic": "/unity/command_pose",
                 "teleop_enable_topic": "/unity/teleop_enabled",
-                "group_name": "ur_manipulator",
-                "ee_link": "tool0",
                 "base_frame": "base_link",
                 "rate_hz": 60.0,
+                "position_scale": 1.0,
                 "hand_deadband_m": 0.003,
-                "hand_yaw_deadband_deg": 1.5,
-                "max_cmd_step_m": 0.01,
-                "max_cmd_yaw_step_deg": 5.0,
+                "max_total_delta_m": 0.30,
+                "max_cmd_step_m": 0.02,
                 "x_min": 0.10,
                 "x_max": 0.80,
                 "y_min": -0.50,
                 "y_max": 0.50,
                 "z_min": 0.05,
                 "z_max": 0.70,
-                "debug_verbose": True,
+                "orientation_mode": "full_relative",
+                "angular_deadband_deg": 0.5,
+                "max_angle_from_anchor_deg": 90.0,
+                "max_cmd_angle_step_deg": 12.0,
+                "debug_verbose": False,
+                "debug_rpy": False,
+                "debug_raw_hand_quat": False,
             },
         ],
     )
@@ -113,6 +113,7 @@ def generate_launch_description():
         executable="pose_error_to_twist",
         name="pose_error_to_twist",
         output="screen",
+        arguments=["--ros-args", "--log-level", "warn"],
         parameters=[
             {
                 "desired_pose_topic": "/unity/command_pose",
@@ -131,31 +132,55 @@ def generate_launch_description():
         ],
     )
 
-    startup_pose_and_servo_bootstrap = Node(
+    servo_auto_start = Node(
         package="ur_unity_bringup",
-        executable="startup_pose_and_servo_bootstrap",
-        name="startup_pose_and_servo_bootstrap",
+        executable="servo_auto_start",
+        name="servo_auto_start",
         output="screen",
         parameters=[
             {
-                "startup_controller": startup_controller,
-                "forward_controller": forward_controller,
+                "robot_program_running_topic": "/io_and_status_controller/robot_program_running",
                 "switch_service": "/controller_manager/switch_controller",
+                "forward_controller": "forward_velocity_controller",
+                "deactivate_controllers": [
+                    "scaled_joint_trajectory_controller",
+                    "joint_trajectory_controller",
+                ],
                 "reset_service": "/servo_node/reset_servo_status",
                 "start_service": "/servo_node/start_servo",
                 "unpause_service": "/servo_node/unpause_servo",
-                "startup_joint_names": [
-                    "shoulder_pan_joint",
-                    "shoulder_lift_joint",
-                    "elbow_joint",
-                    "wrist_1_joint",
-                    "wrist_2_joint",
-                    "wrist_3_joint",
-                ],
-                "startup_positions": [0.0, -1.1, 1.6, -2.0, -1.57, 0.0],
-                "startup_time_sec": 3.0,
-                "settle_time_sec": 0.75,
-                "wait_timeout_sec": 30.0,
+                "wait_timeout_sec": 5.0,
+                "max_startup_wait_sec": 30.0,
+            }
+        ],
+    )
+
+    actual_pose_to_unity_visual = Node(
+        package="ur_unity_bringup",
+        executable="pose_to_unity_visual",
+        name="actual_pose_to_unity_visual",
+        output="screen",
+        arguments=["--ros-args", "--log-level", "warn"],
+        parameters=[
+            {
+                "input_topic": "/robot/ee_pose",
+                "output_topic": "/unity_vis/actual_pose",
+                "rotation_mode": "full",
+            }
+        ],
+    )
+
+    command_pose_to_unity_visual = Node(
+        package="ur_unity_bringup",
+        executable="pose_to_unity_visual",
+        name="command_pose_to_unity_visual",
+        output="screen",
+        arguments=["--ros-args", "--log-level", "warn"],
+        parameters=[
+            {
+                "input_topic": "/unity/command_pose",
+                "output_topic": "/unity_vis/command_pose",
+                "rotation_mode": "full",
             }
         ],
     )
@@ -166,12 +191,8 @@ def generate_launch_description():
         DeclareLaunchArgument("use_fake_hardware", default_value="true"),
 
         DeclareLaunchArgument(
-            "startup_controller",
-            default_value="joint_trajectory_controller",
-        ),
-        DeclareLaunchArgument(
-            "forward_controller",
-            default_value="forward_position_controller",
+            "initial_joint_controller",
+            default_value="forward_velocity_controller",
         ),
 
         DeclareLaunchArgument("ros_ip", default_value="127.0.0.1"),
@@ -185,5 +206,7 @@ def generate_launch_description():
         ee_tf_to_pose,
         authority_filter_servo,
         pose_error_to_twist,
-        startup_pose_and_servo_bootstrap,
+        servo_auto_start,
+        actual_pose_to_unity_visual,
+        command_pose_to_unity_visual,
     ])
