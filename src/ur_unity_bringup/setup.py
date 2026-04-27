@@ -35,12 +35,10 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'startup_pose_and_servo_bootstrap = ur_unity_bringup.startup_pose_and_servo_bootstrap:main',
-            'unity_pose_to_servo_twist = ur_unity_bringup.unity_pose_to_servo_twist:main',
             'ee_tf_to_pose = ur_unity_bringup.ee_tf_to_pose:main',
             'pose_error_to_twist = ur_unity_bringup.pose_error_to_twist:main',
             'servo_auto_start = ur_unity_bringup.servo_auto_start:main',
-            'pose_to_unity_visual = ur_unity_bringup.pose_to_unity_visual:main',
+            'teleop_mode_manager = ur_unity_bringup.teleop_mode_manager:main',
         ],
     },
 )

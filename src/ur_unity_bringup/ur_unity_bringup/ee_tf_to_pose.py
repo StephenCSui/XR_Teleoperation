@@ -21,7 +21,11 @@ class EeTfToPose(Node):
     def tick(self):
         try:
             t = self.tf_buffer.lookup_transform(self.base_frame, self.ee_frame, rclpy.time.Time())
-        except Exception:
+        except Exception as e:
+            self.get_logger().warn(
+                f"TF lookup {self.base_frame}->{self.ee_frame} failed: {e}",
+                throttle_duration_sec=2.0,
+            )
             return
 
         msg = PoseStamped()
