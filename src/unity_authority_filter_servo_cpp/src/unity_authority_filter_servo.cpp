@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float64.hpp>
@@ -430,6 +431,36 @@ public:
     pub_precision_exit_ = create_publisher<std_msgs::msg::Bool>(precision_exit_topic, 10);
 
     // ------------------------------------------------------------------ //
+    // Detachment / nudge mode                                              //
+    // Active only when mode == PRECISION.                                  //
+    // While detached, hand tracking is suspended; Unity sends discrete    //
+    // nudge increments via nudge_cmd (Twist) which are applied once each. //
+    //                                                                      //
+    // linear  (Unity frame): position nudge direction (unit ±1.0 per axis)//
+    // angular (ROS frame):   orientation nudge direction (unit ±1.0)       //
+    // Step sizes are scaled by nudge_step_m_ and nudge_step_rad_.         //
+    // ------------------------------------------------------------------ //
+    nudge_step_m_   = declare_parameter<double>("nudge_step_m",   0.005);
+    nudge_step_rad_ = declare_parameter<double>("nudge_step_deg", 2.0) * kPi / 180.0;
+
+    sub_detach_mode_ = create_subscription<std_msgs::msg::Bool>(
+      declare_parameter<std::string>("detach_mode_topic", "/unity/detach_mode"), 10,
+      [this](std_msgs::msg::Bool::SharedPtr msg) {
+        const bool was = is_detached_;
+        is_detached_ = msg->data;
+        if (is_detached_ != was) {
+          RCLCPP_INFO(get_logger(), "[DETACH] detach_mode=%d", is_detached_ ? 1 : 0);
+        }
+      });
+
+    sub_nudge_cmd_ = create_subscription<geometry_msgs::msg::Twist>(
+      declare_parameter<std::string>("nudge_cmd_topic", "/unity/nudge_cmd"), 10,
+      [this](geometry_msgs::msg::Twist::SharedPtr msg) {
+        pending_nudge_ = *msg;
+        have_nudge_    = true;
+      });
+
+    // ------------------------------------------------------------------ //
     // Existing subscriptions and publisher                                 //
     // ------------------------------------------------------------------ //
     sub_hand_ = create_subscription<PoseStamped>(
@@ -482,6 +513,8 @@ private:
   {
     anchor_latched_     = false;
     have_last_command_  = false;
+    is_detached_        = false;
+    have_nudge_         = false;
   }
 
   void latch_anchor()
@@ -642,6 +675,53 @@ private:
 
     if (!anchor_latched_) {
       latch_anchor();
+    }
+
+    // ------------------------------------------------------------------ //
+    // Detachment mode: suspend hand tracking, apply discrete nudges       //
+    // Only active when mode == PRECISION.                                  //
+    // Each nudge message is consumed exactly once; position is held       //
+    // between nudges.  Bypasses precision box bounds check.               //
+    // ------------------------------------------------------------------ //
+    if (is_precision && is_detached_) {
+      if (have_nudge_ && have_last_command_) {
+        have_nudge_ = false;
+
+        // Position nudge: Unity linear → ROS delta, scaled by nudge_step_m_
+        const geometry_msgs::msg::Point nudge_delta_unity = make_point(
+          pending_nudge_.linear.x * nudge_step_m_,
+          pending_nudge_.linear.y * nudge_step_m_,
+          pending_nudge_.linear.z * nudge_step_m_);
+        const geometry_msgs::msg::Point nudge_delta_ros = unity_to_ros_delta(nudge_delta_unity);
+        last_command_.pose.position =
+          clamp_workspace(point_add(last_command_.pose.position, nudge_delta_ros));
+
+        // Orientation nudge: angular (ROS world frame), scaled by nudge_step_rad_
+        // Pre-multiply = rotate in world frame.  angular.x/y/z → roll/pitch/yaw.
+        const double rx = pending_nudge_.angular.x * nudge_step_rad_;
+        const double ry = pending_nudge_.angular.y * nudge_step_rad_;
+        const double rz = pending_nudge_.angular.z * nudge_step_rad_;
+        if (std::abs(rx) + std::abs(ry) + std::abs(rz) > 1e-9) {
+          const Eigen::Quaterniond q_nudge =
+            (Eigen::AngleAxisd(rz, Eigen::Vector3d::UnitZ()) *
+             Eigen::AngleAxisd(ry, Eigen::Vector3d::UnitY()) *
+             Eigen::AngleAxisd(rx, Eigen::Vector3d::UnitX())).normalized();
+          const Eigen::Quaterniond q_cmd =
+            msg_to_eigen(last_command_.pose.orientation).normalized();
+          last_command_.pose.orientation = eigen_to_msg((q_nudge * q_cmd).normalized());
+        }
+      }
+
+      // Publish held / nudged command
+      if (!have_last_command_) {
+        publish_current_ee_as_command();
+      } else {
+        PoseStamped cmd = last_command_;
+        cmd.header.stamp    = get_clock()->now();
+        cmd.header.frame_id = base_frame_;
+        pub_command_->publish(cmd);
+      }
+      return;
     }
 
     // ------------------------------------------------------------------ //
@@ -847,10 +927,12 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr sub_canvas_normal_;
   rclcpp::Subscription<PoseStamped>::SharedPtr              sub_precision_box_;
   rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr sub_precision_box_size_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr      sub_detach_mode_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr sub_nudge_cmd_;
 
-  rclcpp::Publisher<PoseStamped>::SharedPtr     pub_command_;
+  rclcpp::Publisher<PoseStamped>::SharedPtr         pub_command_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pub_precision_exit_;
-  rclcpp::TimerBase::SharedPtr                  timer_;
+  rclcpp::TimerBase::SharedPtr                      timer_;
 
   // -------------------------------------------------------------------- //
   // Existing parameters                                                    //
@@ -896,6 +978,15 @@ private:
   double                        precision_box_max_m_{0.05};
   double                        precision_scale_at_min_{0.2};
   double                        precision_scale_at_max_{0.5};
+
+  // -------------------------------------------------------------------- //
+  // Detachment / nudge mode state                                          //
+  // -------------------------------------------------------------------- //
+  bool                          is_detached_{false};
+  bool                          have_nudge_{false};
+  geometry_msgs::msg::Twist     pending_nudge_{};
+  double                        nudge_step_m_{0.005};
+  double                        nudge_step_rad_{0.0};
 
   // -------------------------------------------------------------------- //
   // Teleop runtime state                                                   //

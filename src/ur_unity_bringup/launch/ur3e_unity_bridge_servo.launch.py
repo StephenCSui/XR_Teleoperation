@@ -242,6 +242,13 @@ def generate_launch_description():
             "tangential_scale_precision_near": 0.4,
             "normal_scale_precision_near": 0.10,
 
+            # ---- Detachment / nudge mode (PRECISION only) ----
+            # nudge_step_m: metres moved per button press (position nudge)
+            # nudge_step_deg: degrees rotated per button press (orientation nudge)
+            # TUNE: reduce if nudges feel too coarse; increase if too fine.
+            "nudge_step_m": 0.005,
+            "nudge_step_deg": 2.0,
+
             # ---- Precision bounding box ----
             # Box is drawn by the user in Unity; its size drives position_scale.
             # Geometric mean of box width/height is lerped between min and max bounds.
