@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd"
+            schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>canvas_pose_detector</name>
+  <version>0.13.0</version>
+  <description>
+    RS2 XR Teleoperation -- Member 3 camera perception package.
+    Detects an A4 canvas using AprilTag 36h11 corner markers and publishes
+    a 6-DOF canvas pose for the UR3e drawing robot.
+    Also contains a camera-free pose injector and MoveIt EEF follower for
+    offline validation with URSim and RViz.
+  </description>
+  <maintainer email="you@example.com">Johan</maintainer>
+  <license>MIT</license>
+
+  <!-- ── Build tools ──────────────────────────────────────────────────── -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <!-- ── C++ runtime dependencies ─────────────────────────────────────── -->
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>builtin_interfaces</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>message_filters</depend>
+  <depend>cv_bridge</depend>
+
+  <!-- OpenCV and Eigen are found via CMake find_package, not ament -->
+  <!-- Install if missing:                                           -->
+  <!--   sudo apt install libopencv-dev libeigen3-dev               -->
+
+  <!-- ── Python runtime dependencies ──────────────────────────────────── -->
+  <depend>rclpy</depend>
+
+  <!-- canvas_pose_visualiser.py -->
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-cv-bridge</exec_depend>
+
+  <!-- canvas_pose_follower.py -->
+  <!-- Install moveit_py separately:                                 -->
+  <!--   sudo apt install ros-humble-moveit-py                      -->
+  <exec_depend>tf2-py</exec_depend>
+  <exec_depend>tf2-geometry-msgs</exec_depend>
+
+  <!-- ── Launch dependencies ───────────────────────────────────────────── -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <!-- ── RealSense (Terminal 1 in real-camera pipeline) ────────────────── -->
+  <!-- Install if missing:                                                   -->
+  <!--   sudo apt install ros-humble-realsense2-camera                      -->
+  <!-- Not a hard build dependency; listed here for documentation.          -->
+  <!-- <exec_depend>realsense2_camera</exec_depend> -->
+
+  <!-- ── Test dependencies ─────────────────────────────────────────────── -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
