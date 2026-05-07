@@ -1,50 +1,269 @@
-# Camera Perception Interface -- Unity GUI Integration Guide
-
-
-This document tells you everything you need to connect your Unity GUI to the
-camera perception subsystem, both with and without physical hardware.
-You do not need a camera, a real canvas, or a robot to begin GUI development.
+# Camera Perception -- Unity VR GUI Integration Guide
 
 ---
 
-## Quick Answer: What Topics Does Unity Send and Receive?
+## Overview
 
-### Unity SENDS (you publish from Unity via ROS-TCP-Connector)
+The camera perception subsystem detects the real physical A4 canvas and
+publishes its exact 3D position and orientation every frame. Your job is to
+use that data to render a matching virtual canvas in the Unity VR scene so the
+user sees the drawing surface represented correctly in the headset.
 
-```
-Topic:      /canvas/stroke_target
-Type:       geometry_msgs/msg/PoseStamped
-frame_id:   canvas_centre_assumed
-```
+This document focuses on two things:
+1. How to build the virtual canvas plane in Unity from the ROS data
+2. How to develop and test everything without any physical hardware
 
-Each message = one target point on the canvas the brush should move to.
+---
 
-| Field | Meaning | Range |
-|---|---|---|
-| `pose.position.x` | Horizontal position from canvas centre (m), right = + | -0.148 to +0.148 |
-| `pose.position.y` | Vertical position from canvas centre (m), up = + | -0.105 to +0.105 |
-| `pose.position.z` | Standoff hover distance above canvas (m) | 0.005 (fixed, do not change) |
-| `pose.orientation` | Tool orientation (identity = brush pointing into canvas) | leave as identity |
+## 1. Building the Virtual Canvas Plane
 
-The canvas frame matches A4 landscape (297 mm wide x 210 mm tall). The origin
-is the canvas centre. Think of it as a 2D drawing canvas where x/y are the
-brush position in metres from the middle of the page.
+### What the pose data gives you
 
-### Unity RECEIVES (you subscribe in Unity)
+The topic `/canvas/pose` publishes a `PoseStamped` message. Think of it as
+giving you the answer to: "where is the centre of the canvas, and which way
+is it facing?"
 
 ```
-Topic:      /canvas/correction_data
-Type:       std_msgs/msg/String   (JSON payload)
+Topic:   /canvas/pose
+Type:    geometry_msgs/msg/PoseStamped
 ```
 
-Parse this JSON every frame. It tells you whether the canvas is ready and how
-accurately the camera is tracking it.
+| Field | What it means in Unity terms |
+|---|---|
+| `pose.position.x/y/z` | World position of canvas centre (metres) |
+| `pose.orientation.x/y/z/w` | Canvas face direction as a quaternion |
+| `header.frame_id` | `camera_color_optical_frame` (the ROS coordinate space) |
+
+The canvas is always A4 landscape: **297 mm wide, 210 mm tall**.
+
+### Step-by-step: placing the canvas plane in Unity
+
+**Step 1 -- Subscribe to `/canvas/pose`**
+
+In your ROS subscriber callback, extract position and orientation:
+
+```csharp
+void OnCanvasPoseReceived(PoseStampedMsg msg)
+{
+    // Store as target -- apply in Update() with smoothing
+    targetPosition = new Vector3(
+        (float) msg.pose.position.x,
+       -(float) msg.pose.position.y,   // ROS Y-down -> Unity Y-up: negate Y
+        (float) msg.pose.position.z
+    );
+
+    targetRotation = new Quaternion(
+        (float) msg.pose.orientation.x,
+       -(float) msg.pose.orientation.y, // negate for handedness conversion
+        (float) msg.pose.orientation.z,
+       -(float) msg.pose.orientation.w
+    );
+}
+```
+
+**Step 2 -- Create the canvas GameObject**
+
+In Unity:
+- Create a 3D Quad (GameObject > 3D Object > Quad)
+- Name it `VirtualCanvas`
+- Set scale to match A4 landscape:
+  ```
+  Scale X = 0.297   (297 mm -- A4 width)
+  Scale Y = 0.210   (210 mm -- A4 height)
+  Scale Z = 0.001   (near-zero thickness)
+  ```
+- Apply a white/cream unlit material to represent the paper
+
+The quad's local X axis = canvas width direction (left/right).
+The quad's local Y axis = canvas height direction (up/down).
+The quad's local Z axis = canvas face normal (pointing toward camera).
+
+**Step 3 -- Parent to the camera frame origin**
+
+The pose arrives in `camera_color_optical_frame`. In your Unity scene, create
+an empty parent GameObject called `CameraFrame` that represents this coordinate
+origin. Place `VirtualCanvas` as a child. The ROS-TCP-Connector TF listener
+can drive `CameraFrame`'s transform automatically if you subscribe to the
+`camera_color_optical_frame` TF frame.
+
+Alternatively, drive the canvas directly in world space by composing the
+camera-to-world transform with the pose offset.
+
+**Step 4 -- Smooth the canvas in Update()**
+
+`/canvas/pose` publishes at 6-18 Hz. Snapping to every new message causes
+jitter. Use Lerp and Slerp in `Update()` for a stable VR experience:
+
+```csharp
+Vector3    targetPosition;
+Quaternion targetRotation;
+
+void Update()
+{
+    canvasPlane.transform.localPosition = Vector3.Lerp(
+        canvasPlane.transform.localPosition,
+        targetPosition,
+        Time.deltaTime * 12f      // tune 12f for speed vs smoothness
+    );
+    canvasPlane.transform.localRotation = Quaternion.Slerp(
+        canvasPlane.transform.localRotation,
+        targetRotation,
+        Time.deltaTime * 12f
+    );
+}
+```
+
+Only `targetPosition` and `targetRotation` are written from the ROS callback.
+`Update()` smoothly chases them every frame.
+
+### Using the four corner TF frames
+
+Four TF frames are broadcast for the physical marker corners:
+
+```
+canvas_marker_TL    top-left  corner
+canvas_marker_TR    top-right corner
+canvas_marker_BR    bottom-right corner
+canvas_marker_BL    bottom-left corner
+```
+
+All are children of `camera_color_optical_frame`. With these you can:
+- Place small visual indicator spheres at each corner in the VR scene
+- Show which corners are freshly detected (cyan) vs reconstructed (orange)
+  -- matching the colour coding in the debug camera feed
+- Fit the canvas plane exactly to the detected corner positions
+
+Subscribe to each TF frame via the ROS-TCP-Connector TF listener and attach
+small sphere GameObjects to them. This makes the virtual canvas visually
+anchored to the real marker positions rather than floating at the estimated
+centre.
+
+### Showing canvas state through appearance
+
+Monitor `/canvas/correction_data` (see Section 3) and change the canvas
+material based on `status`:
+
+```csharp
+void UpdateCanvasVisual(string status, float remaining_s, float drift_mm)
+{
+    switch (status)
+    {
+        case "WAITING":
+            // No detection -- hide canvas, show search prompt
+            canvasRenderer.enabled = false;
+            statusText.text = "Point camera at canvas markers";
+            drawButton.interactable = false;
+            break;
+
+        case "COLLECTING":
+            // Calibrating -- show amber ghost with countdown
+            canvasRenderer.enabled = true;
+            canvasMaterial.color = new Color(1f, 0.6f, 0f, 0.4f);
+            statusText.text = $"Calibrating -- hold still  {remaining_s:F0}s";
+            ShowCountdownRing(remaining_s, latch_window_s);
+            drawButton.interactable = false;
+            break;
+
+        case "PAUSED":
+            // Lost tracking -- ghost the canvas at last known position
+            canvasRenderer.enabled = true;
+            canvasMaterial.color = new Color(1f, 1f, 1f, 0.15f);
+            statusText.text = "Canvas lost -- reposition camera";
+            drawButton.interactable = false;
+            break;
+
+        case "OK":
+            // Fully tracked -- opaque canvas, enable drawing
+            canvasRenderer.enabled = true;
+            // Tint edge red if drift is high (>5mm), white if stable
+            float t = Mathf.Clamp01(drift_mm / 5f);
+            canvasMaterial.color = Color.Lerp(Color.white, Color.red, t);
+            statusText.text = drift_mm < 1f ? "" : $"Drift: {drift_mm:F1} mm";
+            drawButton.interactable = true;
+            break;
+    }
+}
+```
+
+---
+
+## 2. Drawing on the Canvas in VR
+
+### What you publish when the user draws
+
+```
+Topic:    /canvas/stroke_target
+Type:     geometry_msgs/msg/PoseStamped
+frame_id: canvas_centre_assumed
+```
+
+`canvas_centre_assumed` is the stable latched reference frame. It does not
+move even if the real canvas drifts slightly. Robot correction handles the
+difference automatically.
+
+### Canvas drawing coordinate system
+
+```
+      canvas_centre_assumed frame
+
+           -Y  (top edge)
+            |
+  -X ──── [0,0] ──── +X   right = +X
+            |
+           +Y  (bottom edge)
+
+  A4 bounds:
+    X: -0.148 m (left)   to  +0.148 m (right)
+    Y: -0.105 m (top)    to  +0.105 m (bottom)
+    Z:  0.005 m fixed    (5mm hover above canvas face -- do not change)
+```
+
+### Converting VR controller position to a stroke message
+
+If you raycast from the VR controller onto the virtual canvas plane, the hit
+point gives you a local UV coordinate. Convert that to canvas metres:
+
+```csharp
+PoseStampedMsg BuildStrokeMsg(Vector2 canvasUV)
+{
+    // canvasUV: (0,0) = top-left, (1,1) = bottom-right of the quad
+    // Map to canvas metres
+    float x = Mathf.Lerp(-0.148f,  0.148f, canvasUV.x);
+    float y = Mathf.Lerp(-0.105f,  0.105f, canvasUV.y);
+
+    // Clamp to A4 bounds
+    x = Mathf.Clamp(x, -0.148f, 0.148f);
+    y = Mathf.Clamp(y, -0.105f, 0.105f);
+
+    var msg = new PoseStampedMsg();
+    msg.header.frame_id        = "canvas_centre_assumed";
+    msg.pose.position.x        = x;
+    msg.pose.position.y        = y;
+    msg.pose.position.z        = 0.005f;   // fixed standoff
+    msg.pose.orientation.w     = 1.0f;     // identity -- brush perpendicular
+    return msg;
+}
+```
+
+**Only publish when `status == "OK"`.**
+
+---
+
+## 3. Canvas Status Topic (JSON)
+
+```
+Topic:   /canvas/correction_data
+Type:    std_msgs/msg/String
+```
+
+Full JSON structure:
 
 ```json
 {
   "status": "OK",
   "pose_age_ms": 35.0,
   "latency_ms": 3.7,
+  "remaining_s": 0.0,
   "error": {
     "lateral_mm": -2.1,
     "vertical_mm": 1.4,
@@ -55,244 +274,163 @@ accurately the camera is tracking it.
 }
 ```
 
-| `status` value | What it means | What Unity should do |
+Parse in C# with `JsonUtility`:
+
+```csharp
+[System.Serializable]
+public class CanvasError {
+    public float lateral_mm, vertical_mm, depth_mm, rotation_deg, total_3d_mm;
+}
+
+[System.Serializable]
+public class CanvasStatus {
+    public string status;
+    public float  pose_age_ms, latency_ms, remaining_s;
+    public CanvasError error;
+}
+
+void OnCorrectionData(StringMsg msg) {
+    var data = JsonUtility.FromJson<CanvasStatus>(msg.data);
+    UpdateCanvasVisual(data.status, data.remaining_s, data.error.total_3d_mm);
+}
+```
+
+| `status` | Meaning | VR response |
 |---|---|---|
-| `WAITING` | No canvas detected yet | Show "Searching for canvas..." |
-| `COLLECTING` | Calibrating -- 10s window | Show countdown, disable draw button |
-| `PAUSED` | Canvas lost (occluded >5s) | Pause strokes, show warning |
-| `OK` | Fully calibrated, live tracking | Enable draw button |
-
-**Rule: only publish `/canvas/stroke_target` when `status == "OK"`.**
+| `WAITING` | No canvas seen yet | Hide canvas, show search prompt |
+| `COLLECTING` | 10s calibration window | Amber canvas, countdown, no drawing |
+| `PAUSED` | Canvas lost (>5s) | Ghost canvas at last known position |
+| `OK` | Tracking live | Full canvas visible, draw enabled |
 
 ---
 
-## Canvas Coordinate System
+## 4. All Topics Summary
 
-```
-         canvas_centre_assumed frame
+| Topic | Direction | Type | Use in Unity |
+|---|---|---|---|
+| `/canvas/stroke_target` | Unity -> ROS | PoseStamped | Publish brush position |
+| `/canvas/correction_data` | ROS -> Unity | String (JSON) | Status + drift for UI |
+| `/canvas/pose` | ROS -> Unity | PoseStamped | Canvas centre + orientation |
+| `/canvas/debug` | ROS -> Unity | Image | Live camera feed for VR display |
+| TF `canvas_centre` | ROS -> Unity | TF | Canvas centre (alternative to pose) |
+| TF `canvas_marker_TL/TR/BR/BL` | ROS -> Unity | TF | Four corner positions |
 
-              -Y  (top of canvas)
-               |
-   -X ────── [0,0] ────── +X  (right)
-    (left)     |          (right)
-              +Y  (bottom of canvas)
-
-   +Z = out of canvas face (toward camera -- away from drawing surface)
-   -Z = into canvas
-
-   A4 landscape physical size:
-     width  (X axis): 297 mm total  -->  x in [-0.148, +0.148] m
-     height (Y axis): 210 mm total  -->  y in [-0.105, +0.105] m
-```
-
-When the user draws a point at the top-left of the canvas in Unity, send:
-```
-position.x = -0.148
-position.y = -0.105
-position.z =  0.005
-```
+You do NOT need: `/canvas/z_constraint`, `/canvas/pose_error`,
+`/canvas/pose_base` -- those are internal to the robot control subsystem.
 
 ---
 
-## ROS-TCP-Connector Setup
+## 5. ROS-TCP-Connector Setup
 
-The `ros_tcp_endpoint` package is already in the repository under `src/`.
-
-**In Unity (Robotics > ROS Settings):**
 ```
-ROS IP Address:  <Ubuntu machine IP on your local network>
-ROS Port:        10000
+ROS IP Address:   <Ubuntu machine LAN IP on your network>
+ROS Port:         10000
 ```
 
-To find the Ubuntu IP:
+Find Ubuntu IP:
 ```bash
 hostname -I | awk '{print $1}'
 ```
 
-The endpoint starts automatically as part of the pipeline launch -- you do not
-need to start it separately.
+`ros_tcp_endpoint` starts automatically with every pipeline launch.
 
 ---
 
-## Mode A: Development Without Camera or Canvas (Recommended to Start)
+## 6. Developing Without Hardware
 
-Use this mode to build and test your Unity GUI without any hardware.
-A synthetic canvas pose is published by the injector node.
-The full correction + status pipeline runs exactly as in production.
+You do not need a camera, canvas, or robot. The sim pipeline publishes
+identical topics and TF frames to the real detector.
 
-### What to run on Ubuntu (one terminal)
+### Start
 
 ```bash
-# Source the workspace first (do this once per terminal)
 source ~/RS2/XR_Teleoperation/install/setup.bash
-
-# Start the full camera-free pipeline
 ros2 launch canvas_pose_detector canvas_sim_pipeline.launch.py
 ```
 
-This starts:
-- `canvas_pose_injector` -- synthetic canvas at 0.5m in front of camera, facing forward
-- `canvas_stroke_corrector` -- 10s calibration window, then publishes `OK`
-- `canvas_depth_visualiser` -- XZ depth plot (optional debug view)
-- `canvas_pose_visualiser` -- 2D lateral plot (optional debug view)
+After ~12s the status reaches `OK`. Connect Unity and all topics are live.
 
-After ~12 seconds (10s calibration + startup), `status` will change to `OK`
-and your GUI draw button should enable.
-
-### Verify it is working
+### Control synthetic canvas from terminal
 
 ```bash
-# Watch status in real time
-ros2 topic echo /canvas/correction_data
+# Move canvas (test depth/distance representation)
+ros2 param set /canvas_pose_injector canvas_z 0.4
 
-# Confirm stroke_target is being received (after you publish from Unity)
-ros2 topic echo /canvas/stroke_target
-```
-
-### Move the synthetic canvas (test your GUI response)
-
-Without restarting anything, you can change the canvas position to test that
-your GUI updates correctly:
-
-```bash
-# Move canvas farther away
-ros2 param set /canvas_pose_injector canvas_z 0.7
-
-# Tilt canvas 20 degrees (test orientation display)
+# Tilt canvas (test orientation handling in Unity)
 ros2 param set /canvas_pose_injector canvas_yaw_deg 20.0
+ros2 param set /canvas_pose_injector canvas_pitch_deg 10.0
 
-# Sweep canvas left/right continuously (test live tracking UI)
+# Animate -- canvas sweeps continuously (test live tracking in VR)
 ros2 param set /canvas_pose_injector animate true
 ros2 param set /canvas_pose_injector animate_axis yaw
 ros2 param set /canvas_pose_injector animate_range 25.0
 ros2 param set /canvas_pose_injector animate_period_s 4.0
+ros2 param set /canvas_pose_injector animate false   # stop
 
-# Stop animation
-ros2 param set /canvas_pose_injector animate false
-
-# Reset to centre
-ros2 param set /canvas_pose_injector canvas_yaw_deg 0.0
-```
-
-### Simulate canvas going missing (test PAUSED state in GUI)
-
-```bash
-# Pause the injector -- status will go to PAUSED after 5 seconds
+# Simulate canvas loss (test PAUSED state)
 ros2 param set /canvas_pose_injector publish_rate_hz 0.0
-
-# Restore
-ros2 param set /canvas_pose_injector publish_rate_hz 10.0
-```
-
-### Trigger a re-calibration (test COLLECTING state in GUI)
-
-```bash
-# Restart just the corrector -- it will go back through the 10s window
-ros2 run canvas_pose_detector canvas_stroke_corrector
+ros2 param set /canvas_pose_injector publish_rate_hz 10.0   # restore
 ```
 
 ---
 
-## Mode B: Full Pipeline With Real Camera and Canvas
+## 7. Integration With Real Hardware
 
-Use this mode for integration testing once hardware is available.
-
-### Prerequisites (Ubuntu side)
-
-- Intel RealSense D435if connected via USB 3
-- AprilTag markers printed at 50mm, attached to canvas corners:
-  ```
-  [ID:0  TL] ─────── [ID:1  TR]
-      |    A4 Canvas    |
-  [ID:3  BL] ─────── [ID:2  BR]
-  ```
-- UR3e robot running with driver (or URSim for mock)
-
-### What to run on Ubuntu
+No Unity changes needed when switching from sim to real hardware:
 
 ```bash
-# Terminal 1 -- RealSense camera
+# Terminal 1
 ros2 launch realsense2_camera rs_launch.py \
   enable_sync:=true align_depth.enable:=true
 
-# Terminal 2 -- Full pipeline (detector + corrector + visualisers)
+# Terminal 2
 ros2 launch canvas_pose_detector canvas_real_pipeline.launch.py
 ```
 
-### What happens
+Real hardware startup timeline:
 
-| Time | Event |
-|---|---|
-| t=0s | Detector starts. Begins detecting AprilTag markers |
-| t=4s | Corrector starts. `status = COLLECTING` for 10 seconds |
-| t=14s | Corrector latches. `status = OK`. GUI draw button enables |
-
-Keep the canvas completely still during the 10-second COLLECTING window.
-After that, the canvas can be moved and the system tracks the drift.
-
-### Optional -- open all visualisation tools
-
-```bash
-# Terminal 3 -- RViz + all rqt plots
-ros2 launch canvas_pose_detector canvas_visualise_all.launch.py
-```
-
-This shows the robot model, all TF frames, camera overlay, 2D error plot,
-and depth view. Useful for integration debugging.
+| Time | Status | Unity should show |
+|---|---|---|
+| t=0s | `WAITING` | "Searching for canvas markers..." |
+| t=4s | `COLLECTING` | Amber canvas + countdown |
+| t=14s | `OK` | Full canvas + draw enabled |
 
 ---
 
-## Unity GUI Recommendations (Based on Contract)
+## 8. Contract Checklist (Subsystem 3)
 
-From the contract (Subsystem 3 -- Simulation Environment):
+**Pass:**
+- Virtual canvas plane at correct position/orientation from `/canvas/pose`
+- Status shown from `correction_data`
+- Draw gated on `status == "OK"`
+- Camera feed displayed from `/canvas/debug`
 
-**Pass (P) -- minimum to achieve:**
-- Display virtual canvas in correct A4 proportions in the Unity scene
-- Show system status from `/canvas/correction_data` (`status` field)
-- Disable stroke input when `status != "OK"`
-- Receive and display live camera feed (available on `/canvas/debug` as ROS Image)
+**Credit:**
+- Status state machine: WAITING / COLLECTING / OK / PAUSED all visually distinct
+- Countdown during COLLECTING using `remaining_s`
 
-**Credit (C):**
-- Mode-based interaction: separate "calibrating" state vs "ready to draw" state
-- Show countdown during `COLLECTING` state (use `remaining_s` from JSON)
+**Distinction:**
+- Corner markers using `canvas_marker_TL/TR/BR/BL` TF frames
+- Canvas plane smoothed with Lerp/Slerp -- no jitter in VR
+- Drift indicator using `error.total_3d_mm`
+- Auto-recovery when status returns to `OK` after PAUSED
 
-**Distinction (D) and above:**
-- Show real-time canvas drift indicator (use `error.total_3d_mm` from JSON)
-- Show canvas position relative to robot in the virtual scene (use TF frame
-  `canvas_centre_assumed` via ROS-TCP-Connector TF subscription)
-- Show warning overlay when `status == "PAUSED"` (canvas lost)
-
----
-
-## Summary of All Relevant Topics
-
-| Topic | Direction | Type | Purpose |
-|---|---|---|---|
-| `/canvas/stroke_target` | Unity -> ROS | PoseStamped | Brush target point on canvas |
-| `/canvas/correction_data` | ROS -> Unity | String (JSON) | Status + all error values |
-| `/canvas/debug` | ROS -> Unity | Image | Raw camera feed with marker overlay |
-| `/canvas/pose` | ROS internal | PoseStamped | Raw canvas pose (camera frame) |
-| `/canvas/z_constraint` | ROS -> Stephen | PoseStamped | Z depth for robot control (not Unity) |
-
-You only need `/canvas/stroke_target` and `/canvas/correction_data` for the
-GUI. The others are internal to the perception and motion planning subsystems.
+**HD:**
+- Canvas tinting reflects live tracking quality
+- Stroke positions clamped to A4 bounds before publishing
+- Clear haptic or visual warning when tracking degrades mid-stroke
+- Draw input immediately disabled when status leaves `OK`
 
 ---
 
 ## Contact
 
-If the ROS-TCP-Connector drops connection or topics are missing, first check:
+For any changes to topic names, message fields, or coordinate frames,
+contact Johan first -- changes affect Stephen's subsystem too.
 
 ```bash
-# Is the endpoint running?
-ros2 node list | grep tcp
-
-# Is the pipeline running?
+# Quick diagnosis
 ros2 node list | grep canvas
-
-# What is the current status?
 ros2 topic echo /canvas/correction_data --once
+ros2 topic hz /canvas/pose
 ```
-
-Raise any interface changes (topic names, message fields, coordinate frame
-changes) with Johan before implementing, as they affect the full pipeline.
