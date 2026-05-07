@@ -86,6 +86,13 @@ install(PROGRAMS src/canvas_depth_visualiser.py
   RENAME canvas_depth_visualiser
 )
 
+install(PROGRAMS
+  src/canvas_tf_bridge.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME canvas_tf_bridge
+)
+
+
 # ── Install launch files ──────────────────────────────────────────────────────
 install(DIRECTORY
   launch
@@ -100,5 +107,14 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(FILES
+  config/rviz_tf_validation.rviz
+  DESTINATION share/${PROJECT_NAME}/config
+)
+
+install(FILES
+  config/rviz_full.rviz
+  DESTINATION share/${PROJECT_NAME}/config
+)
 # ── Ament package finalisation ────────────────────────────────────────────────
 ament_package()

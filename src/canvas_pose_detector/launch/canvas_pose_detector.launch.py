@@ -66,7 +66,14 @@ def generate_launch_description():
                 'max_depth_m':        3.0,
 
                 # Persistence: frames a marker can be missing before lost
+                # Persistence: frames a marker can be missing before 3D cache kicks in
                 'missing_frames_tol': 5,
+
+                # 3D cache: frames to trust a marker's last known 3D position
+                # when it is occluded (e.g. by robot wrist during drawing).
+                # At ~20fps: 300 = 15s   600 = 30s
+                # Raise this for longer strokes where wrist blocks bottom markers.
+                'last_known_tol':     300,
 
                 # Debug image: lower values = less CPU and network load
                 'publish_debug':      True,

@@ -1,0 +1,85 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 0
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /TF1
+        - /TF1/Frames1
+      Splitter Ratio: 0.55
+    Tree Height: 900
+  - Class: rviz_common/Views
+    Name: Views
+    Splitter Ratio: 0.5
+
+Visualization Manager:
+  Class: ""
+  Displays:
+
+    - Class: rviz_common/GlobalOptions
+      Fixed Frame: base_link
+      Background Color: 20; 20; 20
+      Frame Rate: 30
+
+    - Alpha: 0.7
+      Class: rviz_default_plugins/RobotModel
+      Description Topic: /robot_description
+      Enabled: true
+      Name: "Robot Model (UR3e)"
+      Value: true
+
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+      Marker Scale: 0.12
+      Name: "TF (all frames)"
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Value: true
+
+  Enabled: true
+  Global Options:
+    Background Color: 20; 20; 20
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 1.6
+      Focal Point:
+        X: 0.25
+        Y: 0.0
+        Z: 0.35
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.50
+      Target Frame: base_link
+      Value: Orbit (rviz)
+      Yaw: 5.3
+    Saved: ~
+
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1050
+  Hide Left Dock: false
+  Hide Right Dock: true
+  Views:
+    collapsed: false
+  Width: 1600
+  X: 0
+  Y: 0

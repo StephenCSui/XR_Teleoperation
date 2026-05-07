@@ -1,5 +1,19 @@
 /**
- * canvas_pose_detector.cpp  --  Member 3 canvas pose node  (v13)
+ * canvas_pose_detector.cpp  --  Member 3 canvas pose node  (v14)
+ *
+ * New in v14:
+ *   - 3D position cache (last_pts3d_): stores the last known valid 3D position
+ *     for each marker. When a marker is occluded (e.g. by the robot wrist during
+ *     drawing), the cached 3D is used directly instead of sampling depth at the
+ *     geometrically-reconstructed 2D pixel position (which would hit the arm).
+ *   - New parameter: last_known_tol (default 300 frames ~15s at 20fps).
+ *     Frames a missing marker's 3D position is trusted before expiring.
+ *   - Debug image: cached corners drawn in YELLOW (vs cyan for fresh detections).
+ *   - Partial detection priority:
+ *       1. Fresh detection + depth sampling  (best)
+ *       2. Persistence buffer (<=missing_frames_tol, last_centres_)  (normal)
+ *       3. 3D cache (<=last_known_tol, last_pts3d_)  (NEW -- occlusion robust)
+ *       4. 2D geometric reconstruction (parallelogram / aspect ratio)  (fallback)
  *
  * New in v13:
  *   - 3D RPY arc markers in RViz (/canvas/markers, namespace "rpy_arcs")
@@ -32,9 +46,11 @@
  */
 
 #include <array>
+#include <climits>
 #include <cmath>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -232,6 +248,7 @@ public:
     declare_parameter("depth_sample_half",    12);
     declare_parameter("max_depth_m",          3.0);
     declare_parameter("missing_frames_tol",   5);
+    declare_parameter("last_known_tol",       300);  // frames to trust cached 3D (~15s at 20fps)
     declare_parameter("publish_debug",        true);
     declare_parameter("debug_scale",          0.5);
     declare_parameter("debug_fps",            10.0);
@@ -275,6 +292,7 @@ public:
     depth_sample_half_  = get_parameter("depth_sample_half").as_int();
     max_depth_m_        = get_parameter("max_depth_m").as_double();
     missing_frames_tol_ = get_parameter("missing_frames_tol").as_int();
+    last_known_tol_     = get_parameter("last_known_tol").as_int();
     publish_debug_      = get_parameter("publish_debug").as_bool();
     debug_scale_        = get_parameter("debug_scale").as_double();
     debug_fps_          = get_parameter("debug_fps").as_double();
@@ -387,6 +405,7 @@ private:
   int    depth_sample_half_;
   double max_depth_m_;
   int    missing_frames_tol_;
+  int    last_known_tol_;   // frames to trust cached 3D position after occlusion
   bool   publish_debug_;
   double debug_scale_;
   double debug_fps_;
@@ -400,6 +419,8 @@ private:
   std::vector<int>          corner_ids_;
   std::map<int,int>         missing_frames_;
   std::map<int,cv::Point2f> last_centres_;
+  std::map<int,Eigen::Vector3d> last_pts3d_;          // cached 3D per marker (updated on valid depth)
+  std::map<int,int>             missing_frames_3d_;   // frames since last valid 3D for each marker
 
   // Frame names for each corner
   const std::array<std::string,4> corner_frame_names_{
@@ -632,20 +653,107 @@ private:
       centres[marker_id_br_], centres[marker_id_bl_]
     };
 
-    // Depth -> 3D corners
+    // ── Per-marker pts3d with 3D cache fallback ──────────────────────────────
+    //
+    // Priority per marker:
+    //   1. Fresh detection this frame  → sample depth, update last_pts3d_ cache
+    //   2. 2D persistence buffer only  → sample depth at last_centres_ position,
+    //                                    update cache if depth valid
+    //   3. 3D cache (<=last_known_tol) → use last_pts3d_ directly, no depth needed
+    //                                    CRITICAL for occlusion by robot wrist
+    //   4. 2D geometric reconstruction → sample depth at reconstructed position
+    //                                    (last resort -- may fail if arm is in view)
+    //
+    // detected_this_frame tracks which IDs had a fresh ArUco detection.
+    // Note: after the persistence/reconstruction block, all 4 IDs are in
+    // `centres`, but only freshly-detected ones should trigger depth sampling.
+    // Markers still in persistence window are also "fresh enough" for depth.
+
+    std::set<int> fresh_ids;
+    for (const auto & kv : detected) fresh_ids.insert(kv.first);
+    // Also treat persistence-window markers as fresh for depth sampling
+    for (int id : corner_ids_)
+      if (missing_frames_.count(id) && missing_frames_[id] > 0 &&
+          missing_frames_[id] <= missing_frames_tol_)
+        fresh_ids.insert(id);
+
+    const std::array<int,4> corner_order = {
+      marker_id_tl_, marker_id_tr_, marker_id_br_, marker_id_bl_
+    };
+
     std::vector<Eigen::Vector3d> pts3d;
     bool ok = true;
-    for (const auto & c : corners_2d) {
-      int u=(int)std::round(c.x), v=(int)std::round(c.y);
-      float z = sampleDepth(depth16, u, v, depth_sample_half_);
-      if (z < 0.05f || z > (float)max_depth_m_)
-        z = sampleDepth(depth16, u, v, depth_sample_half_ * 2);
-      if (z < 0.05f || z > (float)max_depth_m_) {
-        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-          "Invalid depth at (%.0f,%.0f). Increase depth_sample_half.", c.x, c.y);
-        ok = false; break;
+    // Track which corners used cached 3D (for debug image colouring)
+    std::array<bool,4> used_cache = {false, false, false, false};
+
+    for (int ci = 0; ci < 4; ++ci) {
+      int id = corner_order[ci];
+      const cv::Point2f & c = corners_2d[ci];
+
+      bool tried_depth = false;
+      Eigen::Vector3d p3d;
+
+      if (fresh_ids.count(id)) {
+        // ── Case 1 & 2: fresh detection or persistence -- try depth sampling ─
+        int u = (int)std::round(c.x), v = (int)std::round(c.y);
+        float z = sampleDepth(depth16, u, v, depth_sample_half_);
+        if (z < 0.05f || z > (float)max_depth_m_)
+          z = sampleDepth(depth16, u, v, depth_sample_half_ * 2);
+        tried_depth = true;
+
+        if (z >= 0.05f && z <= (float)max_depth_m_) {
+          p3d = backProject(c.x, c.y, z, fx_, fy_, cx_, cy_);
+          // Update 3D cache
+          last_pts3d_[id]        = p3d;
+          missing_frames_3d_[id] = 0;
+          pts3d.push_back(p3d);
+          continue;
+        }
+        // Depth failed for a fresh/persistence marker -- fall through to cache
       }
-      pts3d.push_back(backProject(c.x, c.y, z, fx_, fy_, cx_, cy_));
+
+      // ── Case 3: 3D cache ───────────────────────────────────────────────────
+      int frames_since = missing_frames_3d_.count(id) ? missing_frames_3d_[id] : INT_MAX;
+      if (last_pts3d_.count(id) && frames_since <= last_known_tol_) {
+        pts3d.push_back(last_pts3d_[id]);
+        missing_frames_3d_[id]++;
+        used_cache[ci] = true;
+        RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+          "[CACHE] Marker ID %d occluded -- using cached 3D (%d frames ago)",
+          id, frames_since);
+        continue;
+      }
+
+      // ── Case 4: geometric reconstruction -- try depth at 2D position ───────
+      if (!tried_depth) {
+        int u = (int)std::round(c.x), v = (int)std::round(c.y);
+        float z = sampleDepth(depth16, u, v, depth_sample_half_);
+        if (z < 0.05f || z > (float)max_depth_m_)
+          z = sampleDepth(depth16, u, v, depth_sample_half_ * 2);
+        if (z >= 0.05f && z <= (float)max_depth_m_) {
+          p3d = backProject(c.x, c.y, z, fx_, fy_, cx_, cy_);
+          last_pts3d_[id]        = p3d;
+          missing_frames_3d_[id] = 0;
+          pts3d.push_back(p3d);
+          continue;
+        }
+      }
+
+      // All methods failed for this marker
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+        "No valid 3D for marker ID %d: depth invalid and no cache. "
+        "Increase depth_sample_half or move closer.", id);
+      ok = false;
+      break;
+    }
+
+    // Increment missing_frames_3d_ for markers not seen at all this frame
+    for (int id : corner_ids_) {
+      if (!detected.count(id)) {
+        if (!missing_frames_3d_.count(id)) missing_frames_3d_[id] = 0;
+        // Only increment if not already handled above via cache path
+        // (cache path already incremented)
+      }
     }
 
     if (!ok) {
@@ -821,7 +929,7 @@ private:
       roll_disp, pitch_disp, yaw_disp);
 
     publishDebug(color, enhanced, marker_corners, marker_ids,
-      corners_2d, pts3d, canvas_w, canvas_h, cmsg->header, "ok");
+      corners_2d, pts3d, canvas_w, canvas_h, cmsg->header, "ok", used_cache);
   }
 
   // ==========================================================================
@@ -1143,7 +1251,8 @@ private:
     const std::vector<Eigen::Vector3d> & pts3d,
     double canvas_w, double canvas_h,
     const std_msgs::msg::Header & header,
-    const std::string & status)
+    const std::string & status,
+    const std::array<bool,4> & used_cache = {false,false,false,false})
   {
     if (!publish_debug_) return;
     rclcpp::Time now = this->get_clock()->now();
@@ -1185,11 +1294,16 @@ private:
       const std::vector<std::string> lbl{"TL","TR","BR","BL"};
       for (int i=0; i<4; ++i) {
         cv::line(dbg, sc[i], sc[(i+1)%4], {0,255,0}, 1);
-        cv::circle(dbg, sc[i], 4, {0,255,255}, -1);
+        // Cyan = fresh detection, Yellow = using 3D cache (occluded marker)
+        cv::Scalar dot_col = used_cache[i] ? cv::Scalar(0,255,255) : cv::Scalar(0,255,255);
+        cv::Scalar txt_col = used_cache[i] ? cv::Scalar(0,200,255) : cv::Scalar(0,255,255);
+        if (used_cache[i]) dot_col = cv::Scalar(0,215,255);  // orange-yellow for cached
+        cv::circle(dbg, sc[i], 5, dot_col, -1);
         std::string label = lbl[i];
+        if (used_cache[i]) label += "(C)";  // C = Cached
         if (!pts3d.empty()) label += cv::format(" %.2fm", pts3d[i].z());
         cv::putText(dbg, label, {(int)sc[i].x+5,(int)sc[i].y-5},
-          cv::FONT_HERSHEY_SIMPLEX, 0.35, {0,255,255}, 1);
+          cv::FONT_HERSHEY_SIMPLEX, 0.35, txt_col, 1);
         if (!pts3d.empty()) {
           double elen = (pts3d[(i+1)%4]-pts3d[i]).norm();
           cv::Point2f mid = (sc[i]+sc[(i+1)%4])*0.5f;
@@ -1198,9 +1312,13 @@ private:
             cv::FONT_HERSHEY_SIMPLEX, 0.30, {0,255,255}, 1);
         }
       }
+      // Count how many corners used cache
+      int n_cached = (int)std::count(used_cache.begin(), used_cache.end(), true);
+      int n_fresh  = 4 - n_cached;
       cv::putText(dbg,
-        cv::format("DETECTED %.2fx%.2fm", canvas_w, canvas_h),
-        {10,22}, cv::FONT_HERSHEY_SIMPLEX, 0.55, {0,255,0}, 1);
+        cv::format("DETECTED %.2fx%.2fm  [%d/4 fresh  %d cached]",
+          canvas_w, canvas_h, n_fresh, n_cached),
+        {10,22}, cv::FONT_HERSHEY_SIMPLEX, 0.50, {0,255,0}, 1);
 
     } else if (status == "missing") {
       cv::putText(dbg,

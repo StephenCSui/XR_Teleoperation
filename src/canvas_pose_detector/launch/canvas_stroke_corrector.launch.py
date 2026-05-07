@@ -10,6 +10,12 @@ def generate_launch_description():
             name='canvas_stroke_corrector',
             output='screen',
             parameters=[{
+                # Subscribe to detector output directly.
+                # /canvas/pose_base (bridge output) requires robot TF tree --
+                # only switch to that when the UR driver is running.
+                'source_topic':    '/canvas/pose',
+                'fallback_frame':  'camera_color_optical_frame',
+
                 # Seconds to collect canvas poses and average them before
                 # freezing as the assumed (reference) pose T_assumed.
                 # Keep canvas STILL during this window.
@@ -21,6 +27,8 @@ def generate_launch_description():
 
                 # 50Hz matches MoveIt Servo streaming rate.
                 'publish_rate_hz':  50.0,
+
+                'brush_standoff_m': 0.005,
 
                 'enabled':          True,
             }]

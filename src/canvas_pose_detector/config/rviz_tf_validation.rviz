@@ -1,0 +1,171 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /TF1
+        - /TF1/Frames1
+        - /RobotModel1
+      Splitter Ratio: 0.5
+    Tree Height: 800
+  - Class: rviz_common/Selection
+    Name: Selection
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+
+Visualization Manager:
+  Class: ""
+  Displays:
+
+    # ── Global options ──────────────────────────────────────────────────────
+    - Class: rviz_common/GlobalOptions
+      Fixed Frame: base_link
+      Background Color: 30; 30; 30
+      Frame Rate: 30
+
+    # ── Robot model ─────────────────────────────────────────────────────────
+    - Alpha: 0.8
+      Class: rviz_default_plugins/RobotModel
+      Description Topic: /robot_description
+      Enabled: true
+      Name: RobotModel
+      TF Prefix: ""
+      Value: true
+
+    # ── TF tree (all frames) ─────────────────────────────────────────────────
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+      Marker Scale: 0.15
+      Name: TF (all frames)
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Value: true
+
+    # ── Axes: base_link (large, grey reference) ──────────────────────────────
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.20
+      Name: "AXIS: base_link"
+      Radius: 0.012
+      Reference Frame: base_link
+      Value: true
+
+    # ── Axes: flange (medium, shows EEF face) ───────────────────────────────
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.10
+      Name: "AXIS: flange"
+      Radius: 0.008
+      Reference Frame: flange
+      Value: true
+
+    # ── Axes: tool0 (medium, MoveIt planning frame) ──────────────────────────
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.10
+      Name: "AXIS: tool0"
+      Radius: 0.006
+      Reference Frame: tool0
+      Value: true
+
+    # ── Axes: camera_color_optical_frame (shows camera mount) ────────────────
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.12
+      Name: "AXIS: camera_color_optical_frame"
+      Radius: 0.007
+      Reference Frame: camera_color_optical_frame
+      Value: true
+
+    # ── Axes: canvas_centre (injector output, in camera frame) ───────────────
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.08
+      Name: "AXIS: canvas_centre (camera frame)"
+      Radius: 0.005
+      Reference Frame: canvas_centre
+      Value: true
+
+    # ── Axes: canvas_centre_base (bridge output, in base_link) ───────────────
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.08
+      Name: "AXIS: canvas_centre_base (BASE_LINK frame)"
+      Radius: 0.005
+      Reference Frame: canvas_centre_base
+      Value: true
+
+    # ── Axes: canvas_centre_assumed (corrector latch frame) ──────────────────
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.06
+      Name: "AXIS: canvas_centre_assumed"
+      Radius: 0.004
+      Reference Frame: canvas_centre_assumed
+      Value: false
+
+    # ── RViz markers from injector (canvas outline + corner axes) ────────────
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic: /canvas/markers
+      Name: Canvas Markers (injector)
+      Value: true
+
+  Enabled: true
+  Global Options:
+    Background Color: 30; 30; 30
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 1.8
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Focal Point:
+        X: 0.2
+        Y: 0.0
+        Z: 0.3
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.55
+      Target Frame: base_link
+      Value: Orbit (rviz)
+      Yaw: 5.5
+    Saved: ~
+
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1000
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: ""
+  Views:
+    collapsed: false
+  Width: 1400
+  X: 0
+  Y: 0
