@@ -10,6 +10,9 @@ Detects an A4 canvas in 3D space using a wrist-mounted Intel RealSense D435if de
 
 This subsystem is the **perception backbone** of the teleoperation system -- without it, the robot has no knowledge of where the canvas is.
 
+<!-- TODO: Replace with a screenshot of the full pipeline running (rqt_image_view showing /canvas/debug) -->
+![Pipeline overview](images/pipeline_overview.png)
+
 ---
 
 ## Package Layout
@@ -204,6 +207,11 @@ In the `/canvas/debug` image, reconstructed corner positions (from 1- or 2-marke
 - **Magenta dots** (vs cyan for freshly detected, orange for cached)
 - **Dashed orange bounding boxes** around the reconstructed position
 - **"(R)" label suffix** next to the corner ID
+
+<!-- TODO: Insert screenshots showing partial detection cases -->
+| 4 markers detected | 3 markers (1 occluded) | 2 markers | 1 marker |
+|---|---|---|---|
+| ![4 markers](images/detection_4_markers.png) | ![3 markers](images/detection_3_markers.png) | ![2 markers](images/detection_2_markers.png) | ![1 marker](images/detection_1_marker.png) |
 
 **3D Position Caching (v14)**
 
@@ -407,6 +415,11 @@ This JSON is consumed by Unity to show the canvas status in VR (see [Unity Integ
 
 **Camera overlay:** Projects assumed/real canvas centres onto the camera image. Green crosshair at assumed origin, dashed arrow to real origin. Error values overlaid.
 
+<!-- TODO: Insert screenshots of correction visualiser outputs -->
+| `/canvas/correction_2d` | `/canvas/debug_corrected` |
+|---|---|
+| ![Correction 2D](images/correction_2d.png) | ![Debug corrected](images/debug_corrected.png) |
+
 ---
 
 ### 6. `canvas_depth_visualiser` (Python -- `src/canvas_depth_visualiser.py`)
@@ -420,6 +433,9 @@ This JSON is consumed by Unity to show the canvas status in VR (see [Unity Integ
 
 **Visual elements:** Camera cone at origin, cyan line for real canvas plane (angled based on tilt), green dashed line for assumed canvas, blue standoff band, yellow constraint line (where the brush Z is locked), orange depth error bracket.
 
+<!-- TODO: Insert screenshot of depth visualiser -->
+![Depth view](images/depth_view.png)
+
 ---
 
 ### 7. `canvas_pose_visualiser` (Python -- `src/canvas_pose_visualiser.py`)
@@ -431,6 +447,11 @@ This JSON is consumed by Unity to show the canvas status in VR (see [Unity Integ
 | `/canvas/pose` | `/canvas/pose_2d_xy` -- X vs Y lateral/vertical plot |
 | `/canvas/viewing_angles` | `/canvas/pose_2d_xz` -- X vs Z depth/lateral bird's eye |
 | | `/canvas/pose_3d_tf` -- 3D TF frame illustration with RPY arcs |
+
+<!-- TODO: Insert screenshots of pose visualiser outputs -->
+| `/canvas/pose_2d_xy` | `/canvas/pose_2d_xz` | `/canvas/pose_3d_tf` |
+|---|---|---|
+| ![XY plot](images/pose_2d_xy.png) | ![XZ plot](images/pose_2d_xz.png) | ![3D TF](images/pose_3d_tf.png) |
 
 ---
 
@@ -645,6 +666,9 @@ Print AprilTag 36h11 markers from https://chev.me/arucogen/ (Dictionary: **April
 - Markers must be **flat** (curled markers degrade detection)
 - The canvas black tape border is the recommended physical boundary
 - Minimum detection distance: ~20 cm. Maximum reliable distance: ~1.5 m (with `aruco_win_max=53`)
+
+<!-- TODO: Insert photo of physical canvas with AprilTag markers attached -->
+![Canvas with markers](images/canvas_markers_photo.png)
 
 ---
 
