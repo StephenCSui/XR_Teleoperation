@@ -106,7 +106,6 @@ The perception subsystem is a **4-stage pipeline** where each node does one job 
                /canvas/depth_view      Image (XZ side-view depth)
                /canvas/pose_2d_xy      Image (X vs Y lateral plot)
                /canvas/pose_2d_xz      Image (X vs Z bird's eye)
-               /canvas/pose_3d_tf      Image (3D TF frame view)
 ```
 
 For **camera-free simulation**, `canvas_pose_injector` replaces Stage 1 and publishes identical topics to `/canvas/pose`, so the rest of the pipeline works unchanged.
@@ -209,9 +208,18 @@ In the `/canvas/debug` image, reconstructed corner positions (from 1- or 2-marke
 - **"(R)" label suffix** next to the corner ID
 
 <!-- TODO: Insert screenshots showing partial detection cases -->
-| 4 markers detected | 3 markers (1 occluded) | 2 markers | 1 marker |
-|---|---|---|---|
-| ![4 markers](images/detection_4_markers.png) | ![3 markers](images/detection_3_markers.png) | ![2 markers](images/detection_2_markers.png) | ![1 marker](images/detection_1_marker.png) |
+
+**4 markers detected:**
+
+![4 markers](images/detection_4_markers.png)
+
+**3 markers (1 occluded):**
+
+![3 markers](images/detection_3_markers.png)
+
+**2 markers:**
+
+![2 markers](images/detection_2_markers.png)
 
 **3D Position Caching (v14)**
 
@@ -416,9 +424,14 @@ This JSON is consumed by Unity to show the canvas status in VR (see [Unity Integ
 **Camera overlay:** Projects assumed/real canvas centres onto the camera image. Green crosshair at assumed origin, dashed arrow to real origin. Error values overlaid.
 
 <!-- TODO: Insert screenshots of correction visualiser outputs -->
-| `/canvas/correction_2d` | `/canvas/debug_corrected` |
-|---|---|
-| ![Correction 2D](images/correction_2d.png) | ![Debug corrected](images/debug_corrected.png) |
+
+**`/canvas/correction_2d`:**
+
+![Correction 2D](images/correction_2d.png)
+
+**`/canvas/debug_corrected`:**
+
+![Debug corrected](images/debug_corrected.png)
 
 ---
 
@@ -440,18 +453,22 @@ This JSON is consumed by Unity to show the canvas status in VR (see [Unity Integ
 
 ### 7. `canvas_pose_visualiser` (Python -- `src/canvas_pose_visualiser.py`)
 
-**Purpose:** 2D and 3D pose plots for debugging. **Works without camera.**
+**Purpose:** 2D pose plots for debugging. **Works without camera.**
 
 | Subscribed | Published |
 |---|---|
 | `/canvas/pose` | `/canvas/pose_2d_xy` -- X vs Y lateral/vertical plot |
 | `/canvas/viewing_angles` | `/canvas/pose_2d_xz` -- X vs Z depth/lateral bird's eye |
-| | `/canvas/pose_3d_tf` -- 3D TF frame illustration with RPY arcs |
 
 <!-- TODO: Insert screenshots of pose visualiser outputs -->
-| `/canvas/pose_2d_xy` | `/canvas/pose_2d_xz` | `/canvas/pose_3d_tf` |
-|---|---|---|
-| ![XY plot](images/pose_2d_xy.png) | ![XZ plot](images/pose_2d_xz.png) | ![3D TF](images/pose_3d_tf.png) |
+
+**`/canvas/pose_2d_xy`:**
+
+![XY plot](images/pose_2d_xy.png)
+
+**`/canvas/pose_2d_xz`:**
+
+![XZ plot](images/pose_2d_xz.png)
 
 ---
 
@@ -607,7 +624,6 @@ ros2 param set /canvas_pose_injector animate false   # stop
 | `/canvas/depth_view` | Image | depth_vis | rqt | XZ depth side-view |
 | `/canvas/pose_2d_xy` | Image | pose_vis | rqt | X vs Y plot |
 | `/canvas/pose_2d_xz` | Image | pose_vis | rqt | X vs Z plot |
-| `/canvas/pose_3d_tf` | Image | pose_vis | rqt | 3D TF view |
 
 ---
 

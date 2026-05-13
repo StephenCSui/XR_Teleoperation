@@ -199,7 +199,6 @@ publishes identical topics directly to `/canvas/pose`.
 | `/canvas/depth_view` | `Image` | depth_visualiser | XZ side-view canvas plane + brush |
 | `/canvas/pose_2d_xy` | `Image` | pose_visualiser | X vs Y lateral plot |
 | `/canvas/pose_2d_xz` | `Image` | pose_visualiser | X vs Z bird's eye plot |
-| `/canvas/pose_3d_tf` | `Image` | pose_visualiser | 3D TF frame illustration |
 
 ---
 

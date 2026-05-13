@@ -316,4 +316,3 @@ ros2 run rqt_image_view rqt_image_view
 | `/canvas/depth_view` | XZ side-view canvas plane + brush | No |
 | `/canvas/pose_2d_xy` | X vs Y lateral plot | No |
 | `/canvas/pose_2d_xz` | X vs Z depth plot | No |
-| `/canvas/pose_3d_tf` | 3D TF frame illustration | No |

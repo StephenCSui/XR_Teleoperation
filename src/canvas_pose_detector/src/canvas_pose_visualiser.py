@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """
-canvas_pose_visualiser.py  --  2D/3D pose visualiser  (v5)
+canvas_pose_visualiser.py  --  2D pose visualiser  (v6)
 
-Publishes THREE image topics:
+Publishes TWO image topics:
 
   /canvas/pose_2d_xy   --  X vs Y  (lateral vs vertical, camera frame)
   /canvas/pose_2d_xz   --  X vs Z  (lateral vs depth, top-down bird's eye)
-  /canvas/pose_3d_tf   --  3D projected view of camera + canvas TF frames
-                           Shows XYZ axes of both frames, line between them,
-                           and RPY arc indicators for each rotation axis.
 
 Camera optical frame: X=right, Y=down, Z=forward.
 RPY: ZYX extrinsic (ROS convention), degrees.
@@ -18,7 +15,6 @@ View with:
   ros2 run rqt_image_view rqt_image_view  -> select topic from dropdown
 """
 
-import math
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Vector3Stamped
@@ -27,36 +23,6 @@ from cv_bridge import CvBridge
 import cv2
 import numpy as np
 from collections import deque
-
-
-# =============================================================================
-# RPY conversion
-# =============================================================================
-
-def quaternion_to_rpy(x, y, z, w):
-    """ZYX extrinsic RPY (ROS convention), returns radians."""
-    sinp = 2.0 * (w * y - z * x)
-    sinp = max(-1.0, min(1.0, sinp))
-    pitch = math.asin(sinp)
-    if abs(sinp) < 0.9999:
-        roll  = math.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x*x + y*y))
-        yaw   = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y*y + z*z))
-    else:
-        roll = 0.0
-        yaw  = math.atan2(-2.0 * (x*z - w*y), 1.0 - 2.0 * (x*x + z*z))
-    return roll, pitch, yaw
-
-
-# Quaternion helpers removed -- H/V/Roll computed in C++ node and received via /canvas/viewing_angles
-
-
-def quat_to_matrix(qx, qy, qz, qw):
-    """Quaternion -> 3x3 rotation matrix (numpy)."""
-    return np.array([
-        [1-2*(qy*qy+qz*qz),   2*(qx*qy-qz*qw),   2*(qx*qz+qy*qw)],
-        [  2*(qx*qy+qz*qw), 1-2*(qx*qx+qz*qz),   2*(qy*qz-qx*qw)],
-        [  2*(qx*qz-qy*qw),   2*(qy*qz+qx*qw), 1-2*(qx*qx+qy*qy)],
-    ])
 
 
 # =============================================================================
@@ -266,251 +232,6 @@ def build_xz_plot(size, x_range, z_range, cx, cy, cz, roll, pitch, yaw, trail_xz
 
 
 # =============================================================================
-# 3D TF frame view
-# =============================================================================
-
-def project(pts_3d, R_view, scale, ox, oy):
-    """
-    Orthographic projection of 3D points using view rotation matrix.
-    Returns list of (px, py, depth) tuples.
-    Camera optical frame (X=right, Y=down, Z=forward) is remapped to a
-    screen-friendly display frame before projection:
-      display_X =  world_X   (right)
-      display_Y = -world_Y   (flip: world Y=down -> display Y=up)
-      display_Z = -world_Z   (flip: world Z=forward -> display Z=into screen)
-    """
-    result = []
-    for p in pts_3d:
-        # Remap to display convention
-        pd = np.array([p[0], -p[1], -p[2]])
-        pr = R_view @ pd
-        px = int(ox + pr[0] * scale)
-        py = int(oy - pr[1] * scale)   # screen Y is flipped
-        result.append((px, py, pr[2]))
-    return result
-
-
-def make_view_matrix(az_deg, el_deg):
-    """
-    Build view rotation from azimuth (around world-up Y) and
-    elevation (tilt down toward scene).
-    """
-    az = math.radians(az_deg)
-    el = math.radians(el_deg)
-    Ry = np.array([[ math.cos(az), 0, math.sin(az)],
-                   [0,             1, 0            ],
-                   [-math.sin(az), 0, math.cos(az)]])
-    Rx = np.array([[1, 0,            0           ],
-                   [0, math.cos(el), -math.sin(el)],
-                   [0, math.sin(el),  math.cos(el)]])
-    return Rx @ Ry
-
-
-def draw_axis_arrow(img, R_view, origin_3d, axis_3d, colour,
-                    scale, ox, oy, label, label_col=None):
-    """Draw a single 3D axis arrow from origin_3d in direction axis_3d."""
-    tip_3d = [origin_3d[i] + axis_3d[i] for i in range(3)]
-    pts    = project([origin_3d, tip_3d], R_view, scale, ox, oy)
-    p0     = pts[0][:2]
-    p1     = pts[1][:2]
-
-    size = img.shape[0]
-    in0  = 0<=p0[0]<size and 0<=p0[1]<size
-    in1  = 0<=p1[0]<size and 0<=p1[1]<size
-    if not (in0 or in1):
-        return
-
-    cv2.arrowedLine(img, p0, p1, colour, 2, tipLength=0.2)
-    if label and in1:
-        lc = label_col if label_col else colour
-        cv2.putText(img, label, (p1[0]+4, p1[1]+4), FONT, 0.38, lc, 1)
-
-
-def draw_frame(img, R_view, origin_3d, R_frame,
-               axis_len, scale, ox, oy, label,
-               origin_colour, dim=False):
-    """
-    Draw XYZ axes of a coordinate frame at origin_3d with orientation R_frame.
-    R_frame is a 3x3 numpy rotation matrix (columns are X, Y, Z axes).
-    """
-    alpha = 0.5 if dim else 1.0
-
-    def col(c):
-        if dim:
-            return tuple(int(v * 0.55) for v in c)
-        return c
-
-    for i, (ax_col, ax_lbl) in enumerate(
-            [(COL_X, 'X'), (COL_Y, 'Y'), (COL_Z, 'Z')]):
-        axis_world = R_frame[:, i] * axis_len
-        draw_axis_arrow(img, R_view,
-                        origin_3d, axis_world.tolist(),
-                        col(ax_col), scale, ox, oy, ax_lbl)
-
-    # Origin dot
-    pts = project([origin_3d], R_view, scale, ox, oy)
-    size = img.shape[0]
-    if 0<=pts[0][0]<size and 0<=pts[0][1]<size:
-        cv2.circle(img, pts[0][:2], 6, origin_colour, -1)
-        cv2.putText(img, label, (pts[0][0]+8, pts[0][1]-6),
-                    FONT, 0.40, COL_W, 1)
-
-
-def draw_rpy_arcs(img, R_view, origin_3d, R_canvas,
-                  roll, pitch, yaw, scale, ox, oy):
-    """
-    Draw three small arcs at the canvas frame origin showing the RPY angles.
-    Each arc is drawn in the plane of its rotation axis.
-    Arc radius scales with the axis_len used for the frame.
-    """
-    arc_r  = 0.06   # arc radius in metres
-    n_seg  = 24     # segments per arc
-
-    # For each RPY axis, draw an arc in its rotation plane
-    # Roll  = rotation around canvas X axis -> arc in canvas Y-Z plane
-    # Pitch = rotation around canvas Y axis -> arc in canvas X-Z plane
-    # Yaw   = rotation around canvas Z axis -> arc in canvas X-Y plane
-    arcs = [
-        (roll,  R_canvas[:, 0], R_canvas[:, 1], R_canvas[:, 2], COL_X, 'R'),
-        (pitch, R_canvas[:, 1], R_canvas[:, 0], R_canvas[:, 2], COL_Y, 'P'),
-        (yaw,   R_canvas[:, 2], R_canvas[:, 0], R_canvas[:, 1], COL_Z, 'Y'),
-    ]
-
-    for angle_deg, _rot_ax, u_ax, v_ax, col, lbl in arcs:
-        angle_rad = math.radians(angle_deg)
-        # Draw arc from 0 to angle_rad in the u-v plane
-        prev_pt = None
-        for k in range(n_seg + 1):
-            t   = angle_rad * k / n_seg
-            pt3 = [
-                origin_3d[i] + arc_r * (math.cos(t) * u_ax[i] + math.sin(t) * v_ax[i])
-                for i in range(3)
-            ]
-            proj = project([pt3], R_view, scale, ox, oy)[0]
-            curr = proj[:2]
-            size = img.shape[0]
-            if prev_pt is not None:
-                if (0<=prev_pt[0]<size and 0<=prev_pt[1]<size and
-                        0<=curr[0]<size and 0<=curr[1]<size):
-                    cv2.line(img, prev_pt, curr, col, 1)
-            prev_pt = curr
-
-        # Label at arc tip
-        if prev_pt is not None and 0<=prev_pt[0]<img.shape[0] and 0<=prev_pt[1]<img.shape[0]:
-            cv2.putText(img, f'{lbl}={angle_deg:+.1f}d',
-                        (prev_pt[0]+4, prev_pt[1]), FONT, 0.30, col, 1)
-
-
-def draw_depth_line(img, R_view, cam_origin, cvs_origin, scale, ox, oy):
-    """Dashed line between camera and canvas origins."""
-    n_dash = 12
-    pts    = []
-    for k in range(n_dash + 1):
-        t   = k / n_dash
-        pt3 = [cam_origin[i] + t*(cvs_origin[i]-cam_origin[i]) for i in range(3)]
-        pts.append(project([pt3], R_view, scale, ox, oy)[0][:2])
-
-    size = img.shape[0]
-    for k in range(0, n_dash, 2):
-        p0, p1 = pts[k], pts[k+1]
-        if (0<=p0[0]<size and 0<=p0[1]<size and
-                0<=p1[0]<size and 0<=p1[1]<size):
-            cv2.line(img, p0, p1, (120,120,120), 1)
-
-
-def build_3d_tf_plot(size, cx, cy, cz,
-                     qx, qy, qz, qw,
-                     roll, pitch, yaw):
-    """
-    3D orthographic view of camera frame and canvas frame.
-
-    Camera frame: identity rotation at origin (0,0,0).
-    Canvas frame: quaternion rotation at position (cx, cy, cz).
-
-    View angle: azimuth=-30deg (looking from slight right),
-                elevation=20deg (looking slightly from above).
-    This gives a clear view of both Z (depth) and the canvas orientation.
-    """
-    img  = make_canvas(size)
-
-    # View matrix
-    R_view = make_view_matrix(az_deg=-30, el_deg=20)
-
-    # Scale and centre: the canvas is at depth cz, so we need enough
-    # scale to see both origin and canvas comfortably.
-    # Use 60% of half-image-size per metre, capped so canvas fits.
-    max_dim  = max(abs(cx), abs(cy), abs(cz), 0.3)
-    scale    = min(int((size * 0.38) / max_dim), 300)
-    ox       = size // 2
-    oy       = size // 2 + size // 8   # shift centre down slightly so Z has room
-
-    axis_len = 0.10   # 10cm axis arrows
-
-    # Canvas rotation matrix from quaternion
-    R_canvas = quat_to_matrix(qx, qy, qz, qw)
-
-    # Camera frame: identity rotation at origin
-    R_cam = np.eye(3)
-    cam_origin = [0.0, 0.0, 0.0]
-    cvs_origin = [cx, cy, cz]
-
-    # Depth line (dashed) between frames
-    draw_depth_line(img, R_view, cam_origin, cvs_origin, scale, ox, oy)
-
-    # Distance label at midpoint
-    mid3  = [cam_origin[i]*0.5 + cvs_origin[i]*0.5 for i in range(3)]
-    mid2  = project([mid3], R_view, scale, ox, oy)[0][:2]
-    dist  = (cx**2 + cy**2 + cz**2)**0.5
-    if 0<=mid2[0]<size and 0<=mid2[1]<size:
-        cv2.putText(img, f'{dist:.3f}m', (mid2[0]+5, mid2[1]-5),
-                    FONT, 0.35, (140,140,140), 1)
-
-    # RPY arcs at canvas origin (draw before frames so frames are on top)
-    draw_rpy_arcs(img, R_view, cvs_origin, R_canvas,
-                  roll, pitch, yaw, scale, ox, oy)
-
-    # Camera frame (dimmed -- reference, always identity)
-    draw_frame(img, R_view, cam_origin, R_cam,
-               axis_len, scale, ox, oy,
-               label='Camera', origin_colour=(220,80,0), dim=True)
-
-    # Canvas frame (bright -- this is what changes)
-    draw_frame(img, R_view, cvs_origin, R_canvas,
-               axis_len, scale, ox, oy,
-               label='Canvas', origin_colour=(0,200,60), dim=False)
-
-    # ---- Info panel (top-left) ----
-    pad = 10
-    cv2.putText(img, f'XYZ:  x={cx:+.3f}  y={cy:+.3f}  z={cz:.3f} m',
-                (pad, 44), FONT, 0.36, (80,230,100), 1)
-    cv2.putText(img, f'Roll (in-plane): {roll:+.1f} deg',
-                (pad, 62), FONT, 0.36, COL_X, 1)
-    cv2.putText(img, f'H (horizontal, neg=cam right): {pitch:+.1f} deg',
-                (pad, 80), FONT, 0.36, COL_Y, 1)
-    cv2.putText(img, f'V (vertical,   pos=cam above): {yaw:+.1f} deg',
-                (pad, 98), FONT, 0.36, COL_Z, 1)
-
-    # ---- Axis legend (bottom-left) ----
-    x0, y0, w, h = plot_area(size)
-    leg_y = y0 + h + 10
-    for i, (lbl, col) in enumerate([('X axis', COL_X),
-                                     ('Y axis', COL_Y),
-                                     ('Z axis', COL_Z)]):
-        cv2.putText(img, lbl, (x0 + i*90, leg_y+18), FONT, 0.32, col, 1)
-
-    cv2.putText(img, 'dim = camera frame (identity)',
-                (x0, leg_y+32), FONT, 0.28, (130,130,130), 1)
-    cv2.putText(img, 'bright = canvas frame  |  arcs = RPY angles',
-                (x0, leg_y+44), FONT, 0.28, (130,130,130), 1)
-
-    # ---- Title ----
-    cv2.putText(img, 'Canvas TF Frame vs Camera Frame  (3D projected)',
-                (8, 18), FONT, 0.40, (200,200,200), 1)
-
-    return img
-
-
-# =============================================================================
 # Node
 # =============================================================================
 
@@ -539,11 +260,8 @@ class PoseVisualiser(Node):
         self.trail_xz_ = deque(maxlen=self.trail_len_)
 
         # Pose state
-        self.cx_ = self.cy_ = self.cz_   = None
-        self.qx_ = self.qy_ = self.qz_   = 0.0
-        self.qw_ = 1.0
+        self.cx_ = self.cy_ = self.cz_ = None
         self.roll_ = self.pitch_ = self.yaw_ = None
-        self.total_angle_ = 0.0
 
         self.sub_ = self.create_subscription(
             PoseStamped, '/canvas/pose', self.pose_cb, 10)
@@ -552,25 +270,19 @@ class PoseVisualiser(Node):
 
         self.pub_xy_ = self.create_publisher(Image, '/canvas/pose_2d_xy', 5)
         self.pub_xz_ = self.create_publisher(Image, '/canvas/pose_2d_xz', 5)
-        self.pub_3d_ = self.create_publisher(Image, '/canvas/pose_3d_tf',  5)
 
         self.timer_ = self.create_timer(1.0 / self.fps_, self.publish_plots)
 
         self.get_logger().info(
-            'Canvas pose visualiser v5 ready.\n'
+            'Canvas pose visualiser v6 ready.\n'
             '  /canvas/pose_2d_xy  -- X vs Y (lateral vs vertical)\n'
             '  /canvas/pose_2d_xz  -- X vs Z (lateral vs depth, top-down)\n'
-            '  /canvas/pose_3d_tf  -- 3D projected TF frames + RPY arcs\n'
             '  View: ros2 run rqt_image_view rqt_image_view')
 
     def pose_cb(self, msg: PoseStamped):
         self.cx_ = msg.pose.position.x
         self.cy_ = msg.pose.position.y
         self.cz_ = msg.pose.position.z
-        self.qx_ = msg.pose.orientation.x
-        self.qy_ = msg.pose.orientation.y
-        self.qz_ = msg.pose.orientation.z
-        self.qw_ = msg.pose.orientation.w
         self.trail_xy_.append((self.cx_, self.cy_))
         self.trail_xz_.append((self.cx_, self.cz_))
 
@@ -600,7 +312,7 @@ class PoseVisualiser(Node):
             cv2.putText(waiting, 'Waiting for /canvas/pose ...',
                         (self.size_//2-120, self.size_//2+30),
                         FONT, 0.5, (0,165,255), 1)
-            for pub in (self.pub_xy_, self.pub_xz_, self.pub_3d_):
+            for pub in (self.pub_xy_, self.pub_xz_):
                 pub_img(pub, waiting)
             return
 
@@ -613,12 +325,6 @@ class PoseVisualiser(Node):
             self.size_, self.x_range_, self.z_range_,
             self.cx_, self.cy_, self.cz_,
             self.roll_, self.pitch_, self.yaw_, self.trail_xz_))
-
-        pub_img(self.pub_3d_, build_3d_tf_plot(
-            self.size_,
-            self.cx_, self.cy_, self.cz_,
-            self.qx_, self.qy_, self.qz_, self.qw_,
-            self.roll_, self.pitch_, self.yaw_))
 
 
 # =============================================================================

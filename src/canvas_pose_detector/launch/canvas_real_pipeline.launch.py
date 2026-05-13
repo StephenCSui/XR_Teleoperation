@@ -92,7 +92,7 @@ def generate_launch_description():
         # ── Optional nodes ────────────────────────────────────────────────────
         DeclareLaunchArgument('enable_pose_vis', default_value='false',
             description='Start canvas_pose_visualiser (extra CPU load). '
-                        'Publishes /canvas/pose_2d_xy, pose_2d_xz, pose_3d_tf.'),
+                        'Publishes /canvas/pose_2d_xy, pose_2d_xz.'),
     ]
 
     # ── Node definitions ──────────────────────────────────────────────────────
