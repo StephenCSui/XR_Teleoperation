@@ -349,7 +349,7 @@ Member 2 locks the end-effector Z to `msg.pose.position.z` while allowing XY fre
 }
 ```
 
-This JSON is consumed by Unity to show the canvas status in VR (see [Unity Integration Guide](Unity-Integration-Guide)).
+This JSON is consumed by Unity to show the canvas status in VR (see [Unity Integration Guide](Unity-Integration-Guide.md)).
 
 #### Parameters
 
@@ -627,7 +627,7 @@ Member 2 locks EEF Z to `msg.pose.position.z` while allowing XY freedom for stro
 
 A4 drawing bounds: `x in [-0.148, +0.148]`, `y in [-0.105, +0.105]`
 
-See [Unity Integration Guide](Unity-Integration-Guide) for full details including C# code.
+See [Unity Integration Guide](Unity-Integration-Guide.md) for full details including C# code.
 
 ---
 

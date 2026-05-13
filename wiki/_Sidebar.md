@@ -1,17 +1,17 @@
 ### Navigation
 
-- **[Home](Home)**
-- **[Dependencies](Dependencies)**
-- **[Installation](Installation)**
-- **[Running the System](Running-the-System)**
+- **[Home](Home.md)**
+- **[Dependencies](Dependencies.md)**
+- **[Installation](Installation.md)**
+- **[Running the System](Running-the-System.md)**
 
 ### Subsystems
 
-- [Canvas Pose Detector](Subsystem:-Canvas-Pose-Detector)
-- [UR Unity Bringup](Subsystem:-UR-Unity-Bringup)
-- [ROS-TCP-Endpoint](Subsystem:-ROS-TCP-Endpoint)
+- [Canvas Pose Detector](Subsystem:-Canvas-Pose-Detector.md)
+- [UR Unity Bringup](Subsystem:-UR-Unity-Bringup.md)
+- [ROS-TCP-Endpoint](Subsystem:-ROS-TCP-Endpoint.md)
 
 ### Guides
 
-- [Unity Integration](Unity-Integration-Guide)
-- [Troubleshooting & FAQ](Troubleshooting-&-FAQ)
+- [Unity Integration](Unity-Integration-Guide.md)
+- [Troubleshooting & FAQ](Troubleshooting-&-FAQ.md)

@@ -89,21 +89,21 @@ Unity VR Controller                          RealSense Camera
 
 | Package | Owner | Responsibility | Wiki Page |
 |---|---|---|---|
-| `canvas_pose_detector` | Johan (Member 3) | Camera perception, canvas pose estimation, SE3 correction, visualisers | [Canvas Pose Detector](Subsystem:-Canvas-Pose-Detector) |
-| `ur_unity_bringup` | Stephen (Member 2) | UR3e driver, MoveIt Servo, Unity pose-to-twist bridge | [UR Unity Bringup](Subsystem:-UR-Unity-Bringup) |
-| `ROS-TCP-Endpoint` | Unity Robotics (3rd party) | TCP bridge between Unity and ROS 2 | [ROS-TCP-Endpoint](Subsystem:-ROS-TCP-Endpoint) |
+| `canvas_pose_detector` | Johan (Member 3) | Camera perception, canvas pose estimation, SE3 correction, visualisers | [Canvas Pose Detector](Subsystem:-Canvas-Pose-Detector.md) |
+| `ur_unity_bringup` | Stephen (Member 2) | UR3e driver, MoveIt Servo, Unity pose-to-twist bridge | [UR Unity Bringup](Subsystem:-UR-Unity-Bringup.md) |
+| `ROS-TCP-Endpoint` | Unity Robotics (3rd party) | TCP bridge between Unity and ROS 2 | [ROS-TCP-Endpoint](Subsystem:-ROS-TCP-Endpoint.md) |
 
 ## Wiki Pages
 
-1. **[Home](Home)** -- this page (project overview, architecture)
-2. **[Dependencies](Dependencies)** -- hardware bill of materials and software requirements
-3. **[Installation](Installation)** -- step-by-step setup guide
-4. **[Running the System](Running-the-System)** -- launch commands, expected outcomes, live tuning
-5. **[Subsystem: Canvas Pose Detector](Subsystem:-Canvas-Pose-Detector)** -- camera perception pipeline (Johan)
-6. **[Subsystem: UR Unity Bringup](Subsystem:-UR-Unity-Bringup)** -- robot control and VR teleoperation bridge (Stephen)
-7. **[Subsystem: ROS-TCP-Endpoint](Subsystem:-ROS-TCP-Endpoint)** -- Unity-ROS communication layer
-8. **[Unity Integration Guide](Unity-Integration-Guide)** -- building the VR interface with canvas data
-9. **[Troubleshooting & FAQ](Troubleshooting-&-FAQ)** -- common issues and solutions
+1. **[Home](Home.md)** -- this page (project overview, architecture)
+2. **[Dependencies](Dependencies.md)** -- hardware bill of materials and software requirements
+3. **[Installation](Installation.md)** -- step-by-step setup guide
+4. **[Running the System](Running-the-System.md)** -- launch commands, expected outcomes, live tuning
+5. **[Subsystem: Canvas Pose Detector](Subsystem:-Canvas-Pose-Detector.md)** -- camera perception pipeline (Johan)
+6. **[Subsystem: UR Unity Bringup](Subsystem:-UR-Unity-Bringup.md)** -- robot control and VR teleoperation bridge (Stephen)
+7. **[Subsystem: ROS-TCP-Endpoint](Subsystem:-ROS-TCP-Endpoint.md)** -- Unity-ROS communication layer
+8. **[Unity Integration Guide](Unity-Integration-Guide.md)** -- building the VR interface with canvas data
+9. **[Troubleshooting & FAQ](Troubleshooting-&-FAQ.md)** -- common issues and solutions
 
 ## Team
 
