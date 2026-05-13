@@ -192,10 +192,18 @@ The detector does not require all 4 markers to be visible:
 | 4 | Normal full detection | Best |
 | 3 | Parallelogram rule: missing = opposite_pair_sum - adjacent (exact for rectangles since TL+BR = TR+BL) | Exact |
 | 2 adjacent | A4 aspect ratio: rotate the detected edge 90 degrees and scale by H/W ratio to reconstruct the perpendicular edge | Good |
-| 2 diagonal | Rejected -- insufficient orientation data | N/A |
-| 1 or 0 | Rejected | N/A |
+| 2 diagonal | A4 diagonal angle: the diagonal makes a fixed angle `atan2(H,W) = 35.2°` with the horizontal edge. Since marker IDs identify which diagonal (TL-BR vs TR-BL), the edge direction is recovered uniquely with no reflection ambiguity | Good |
+| 1 | solvePnP on single marker: uses the 4 image corners of the one visible AprilTag + known `marker_size_m` to estimate the marker's 6-DOF pose via `cv::solvePnP(IPPE_SQUARE)`. The remaining 3 canvas corners are computed using known canvas dimensions (`canvas_physical_w_m` x `canvas_physical_h_m`) in the marker's local frame, then projected back to 2D via `cv::projectPoints`. | Approximate |
+| 0 | Rejected | N/A |
 
 Markers missing for fewer than `missing_frames_tol` (default 5) frames are held at their last known position before reconstruction is attempted.
+
+**Debug visualisation for reconstructed corners:**
+
+In the `/canvas/debug` image, reconstructed corner positions (from 1- or 2-marker recovery) are shown with:
+- **Magenta dots** (vs cyan for freshly detected, orange for cached)
+- **Dashed orange bounding boxes** around the reconstructed position
+- **"(R)" label suffix** next to the corner ID
 
 **3D Position Caching (v14)**
 
@@ -692,7 +700,7 @@ ros2 param get /canvas_pose_detector aruco_win_max
 |---|---|---|
 | Hand-eye calibration (`flange -> camera`) | Placeholder values in use | Must be calibrated before real robot use. Update `cam_x/y/z/roll/pitch/yaw` launch args |
 | Close-range marker occlusion (<20 cm) | Mitigated in v14 | 3D position cache holds marker positions for ~15s during wrist occlusion |
-| Diagonal 2-marker pair cannot reconstruct | By design | Logs warning. At least one adjacent pair or 3+ markers needed |
+| Diagonal 2-marker reconstruction uses projected 2D geometry | By design | Accuracy degrades at oblique viewing angles due to perspective distortion |
 | `canvas_correction_visualiser` needs live camera | By design | Not available in sim pipeline. Use `canvas_depth_visualiser` instead |
 | Canvas must be still during latch window | By design | The 10s averaging window requires a stationary canvas. Moving during collection degrades the reference |
 | Maximum detection distance ~1.5 m | Hardware limit | 50 mm markers become too small for reliable detection beyond ~1.5 m. Use larger markers or increase `aruco_win_max` |

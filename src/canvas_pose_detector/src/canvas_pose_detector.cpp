@@ -532,7 +532,12 @@ private:
       //     h_edge → v_edge = rotate90CW(h_edge) * (H/W)   (top edge case)
       //     v_edge → h_edge = rotate90CCW(v_edge) * (W/H)  (left/right edge case)
       //
-      //   2 diagonal markers or 1 marker  →  too ambiguous, return early.
+      //   2 diagonal markers  →  A4 diagonal angle reconstruction.
+      //     The diagonal makes a fixed angle atan2(H,W) with the horizontal
+      //     edge. Since marker IDs identify which diagonal, reconstruction
+      //     is unique (no reflection ambiguity).
+      //
+      //   1 marker  →  too ambiguous, return early.
       //
       // After reconstruction the code falls through to normal depth+pose pipeline.
       // A status flag is logged and shown in the debug image.
@@ -622,11 +627,148 @@ private:
           reconstruct_method = "2-marker: TL+BL from TR+BR (right edge)";
           reconstructed = true;
 
-        } else {
-          // Diagonal pair -- cannot reconstruct without orientation
-          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-            "Diagonal marker pair detected -- cannot reconstruct. "
-            "Need at least 2 markers on the same edge.");
+        } else if (has_tl && has_br && !has_tr && !has_bl) {
+          // TL-BR diagonal: known diagonal vector + A4 dimensions → unique reconstruction.
+          // The diagonal of the rectangle makes a fixed angle with the horizontal edge:
+          //   diag_angle = atan2(H, W)
+          // Since TL is top-left and BR is bottom-right, the horizontal edge direction
+          // is the diagonal direction rotated CCW by diag_angle.
+          cv::Point2f diag = centres[br] - centres[tl];
+          float diag_len = std::sqrt(diag.x*diag.x + diag.y*diag.y);
+          if (diag_len > 1e-6f) {
+            float diag_ang = std::atan2(canvas_physical_h_, canvas_physical_w_);
+            float d_ang    = std::atan2(diag.y, diag.x);
+            float h_ang    = d_ang - diag_ang;  // horizontal edge angle
+            float expected_diag = std::sqrt(canvas_physical_w_*canvas_physical_w_ +
+                                            canvas_physical_h_*canvas_physical_h_);
+            float scale = diag_len / expected_diag;
+            cv::Point2f h_unit(std::cos(h_ang), std::sin(h_ang));
+            cv::Point2f h_edge = h_unit * (float)(canvas_physical_w_ * scale);
+            cv::Point2f v_unit(std::cos(h_ang + (float)M_PI_2),
+                               std::sin(h_ang + (float)M_PI_2));
+            cv::Point2f v_edge = v_unit * (float)(canvas_physical_h_ * scale);
+            centres[tr] = centres[tl] + h_edge;
+            centres[bl] = centres[tl] + v_edge;
+            reconstruct_method = "2-marker: TR+BL from TL+BR (diagonal)";
+            reconstructed = true;
+          }
+
+        } else if (!has_tl && !has_br && has_tr && has_bl) {
+          // TR-BL diagonal: the anti-diagonal.
+          // From TR, the diagonal to BL goes left and down.
+          // diag_angle from horizontal edge (TR→TL direction) = atan2(H, -W) since
+          // BL is left and down from TR. Equivalently, reconstruct via:
+          //   TR-BL diagonal angle - (pi - diag_angle) gives horizontal edge direction.
+          cv::Point2f diag = centres[bl] - centres[tr];
+          float diag_len = std::sqrt(diag.x*diag.x + diag.y*diag.y);
+          if (diag_len > 1e-6f) {
+            float diag_ang = std::atan2(canvas_physical_h_, canvas_physical_w_);
+            float d_ang    = std::atan2(diag.y, diag.x);
+            // TR→BL diagonal is at angle (pi - diag_ang) from the TL→TR direction
+            float h_ang    = d_ang - ((float)M_PI - diag_ang);
+            float expected_diag = std::sqrt(canvas_physical_w_*canvas_physical_w_ +
+                                            canvas_physical_h_*canvas_physical_h_);
+            float scale = diag_len / expected_diag;
+            cv::Point2f h_unit(std::cos(h_ang), std::sin(h_ang));
+            cv::Point2f h_edge = h_unit * (float)(canvas_physical_w_ * scale);
+            centres[tl] = centres[tr] - h_edge;
+            centres[br] = centres[bl] + h_edge;
+            reconstruct_method = "2-marker: TL+BR from TR+BL (diagonal)";
+            reconstructed = true;
+          }
+        }
+
+      } else if (n_present == 1) {
+        // ── 1-marker: solvePnP on the marker + known canvas geometry ──────
+        //
+        // A single AprilTag's 4 image corners + known marker_size_m give a
+        // full 6-DOF pose via solvePnP (IPPE_SQUARE).  Since the marker ID
+        // tells us which canvas corner it sits at, and the canvas dimensions
+        // are known, we project the other 3 corners into the image.
+        //
+        // Steps:
+        //   1. solvePnP on the single marker → rvec, tvec (marker in camera)
+        //   2. Build 3D offsets from this marker to each canvas corner
+        //      (the marker sits at a known corner of the W x H rectangle)
+        //   3. Transform offsets to camera frame and project to 2D
+        //
+        // The marker's own coordinate frame has Z pointing out of the tag,
+        // X right, Y up.  The canvas corners are coplanar at Z=0 in marker
+        // frame, offset by multiples of W and H along X and Y.
+
+        // Find which marker is present and get its ArUco corners
+        int present_id = -1;
+        std::vector<cv::Point2f> present_corners;
+        for (int id : corner_ids_) {
+          if (centres.count(id) && id_to_corners.count(id)) {
+            present_id = id;
+            present_corners = id_to_corners[id];
+            break;
+          }
+        }
+
+        if (present_id >= 0 && present_corners.size() == 4) {
+          // Marker object points (marker-local coords, Z=0 plane)
+          float half = (float)marker_size_m_ * 0.5f;
+          std::vector<cv::Point3f> marker_obj = {
+            {-half,  half, 0}, { half,  half, 0},
+            { half, -half, 0}, {-half, -half, 0}
+          };
+
+          cv::Vec3d rvec, tvec;
+          bool pnp_ok = cv::solvePnP(marker_obj, present_corners,
+            camera_matrix_, dist_coeffs_, rvec, tvec, false, cv::SOLVEPNP_IPPE_SQUARE);
+
+          if (pnp_ok) {
+            // Build canvas corner offsets in marker-local frame.
+            // Marker is at centre of one canvas corner.  Canvas corners in
+            // marker frame (Z=0 plane, X=right along top edge, Y=up):
+            //
+            // The marker coordinate frame has its origin at the marker centre.
+            // We need offsets from this marker to each canvas corner.
+            // Convention: looking at the canvas front face:
+            //   Top edge = X direction (right), Height = -Y direction (down)
+            //   TL is at (0,0), TR at (W,0), BR at (W,-H), BL at (0,-H)
+            //
+            // Offset from a given corner to another corner:
+            float W = (float)canvas_physical_w_;
+            float H = (float)canvas_physical_h_;
+
+            // Canvas corner positions in "canvas frame" (origin at TL, X=right, Y=down in image)
+            // In marker frame: X=right, Y=up, so Y_marker = -Y_image
+            std::map<int, cv::Point3f> corner_in_canvas;
+            corner_in_canvas[tl] = {0,  0,  0};
+            corner_in_canvas[tr] = {W,  0,  0};
+            corner_in_canvas[br] = {W, -H,  0};
+            corner_in_canvas[bl] = {0, -H,  0};
+
+            cv::Point3f origin = corner_in_canvas[present_id];
+
+            // For each missing corner, compute its position in marker frame
+            // offset_in_marker = corner_pos - present_marker_pos
+            std::vector<cv::Point3f> missing_pts_3d;
+            std::vector<int> missing_ids;
+            for (int id : corner_ids_) {
+              if (!centres.count(id)) {
+                cv::Point3f offset = corner_in_canvas[id] - origin;
+                missing_pts_3d.push_back(offset);
+                missing_ids.push_back(id);
+              }
+            }
+
+            // Project these 3D points (in marker frame) to image
+            std::vector<cv::Point2f> projected;
+            cv::projectPoints(missing_pts_3d, rvec, tvec,
+              camera_matrix_, dist_coeffs_, projected);
+
+            for (size_t i = 0; i < missing_ids.size(); ++i) {
+              centres[missing_ids[i]] = projected[i];
+            }
+
+            reconstruct_method = cv::format("1-marker: ID %d -> solvePnP + canvas geometry",
+              present_id);
+            reconstructed = true;
+          }
         }
       }
 
@@ -1291,16 +1433,58 @@ private:
       cv::aruco::drawDetectedMarkers(dbg, sm, marker_ids);
 
     if (status == "ok" && sc.size() == 4) {
+      // Draw bounding boxes for reconstructed corners (not detected by ArUco)
+      // These appear as dashed orange rectangles around estimated positions
+      std::set<int> detected_set(marker_ids.begin(), marker_ids.end());
+      const std::array<int,4> id_order = {marker_id_tl_, marker_id_tr_, marker_id_br_, marker_id_bl_};
+      for (int i = 0; i < 4; ++i) {
+        if (!detected_set.count(id_order[i])) {
+          // This corner was reconstructed, not directly detected
+          // Draw a dashed orange box around the estimated position
+          int bsz = 18;  // box half-size in pixels
+          cv::Point2f p = sc[i];
+          cv::Scalar orange(0, 140, 255);
+          // Dashed rectangle: draw 4 dashed edges
+          for (int seg = 0; seg < 4; ++seg) {
+            cv::Point2f a, b;
+            if (seg == 0) { a = {p.x-bsz, p.y-bsz}; b = {p.x+bsz, p.y-bsz}; }
+            else if (seg == 1) { a = {p.x+bsz, p.y-bsz}; b = {p.x+bsz, p.y+bsz}; }
+            else if (seg == 2) { a = {p.x+bsz, p.y+bsz}; b = {p.x-bsz, p.y+bsz}; }
+            else { a = {p.x-bsz, p.y+bsz}; b = {p.x-bsz, p.y-bsz}; }
+            // Draw dashes
+            int n_dash = 4;
+            for (int d = 0; d < n_dash; ++d) {
+              float t0 = (float)d / n_dash;
+              float t1 = (d + 0.6f) / n_dash;
+              cv::Point2f da = a + t0 * (b - a);
+              cv::Point2f db = a + t1 * (b - a);
+              cv::line(dbg, da, db, orange, 1);
+            }
+          }
+          // Label as reconstructed
+          cv::putText(dbg, "R", {(int)p.x - bsz + 2, (int)p.y + bsz - 4},
+            cv::FONT_HERSHEY_SIMPLEX, 0.35, orange, 1);
+        }
+      }
+
       const std::vector<std::string> lbl{"TL","TR","BR","BL"};
       for (int i=0; i<4; ++i) {
         cv::line(dbg, sc[i], sc[(i+1)%4], {0,255,0}, 1);
-        // Cyan = fresh detection, Yellow = using 3D cache (occluded marker)
-        cv::Scalar dot_col = used_cache[i] ? cv::Scalar(0,255,255) : cv::Scalar(0,255,255);
-        cv::Scalar txt_col = used_cache[i] ? cv::Scalar(0,200,255) : cv::Scalar(0,255,255);
-        if (used_cache[i]) dot_col = cv::Scalar(0,215,255);  // orange-yellow for cached
+        // Cyan = fresh detection, Orange = using 3D cache, Magenta = reconstructed
+        bool is_reconstructed = !detected_set.count(id_order[i]) && !used_cache[i];
+        cv::Scalar dot_col = cv::Scalar(0,255,255);     // cyan = fresh
+        cv::Scalar txt_col = cv::Scalar(0,255,255);
+        if (used_cache[i]) {
+          dot_col = cv::Scalar(0,215,255);   // orange-yellow for cached
+          txt_col = cv::Scalar(0,200,255);
+        } else if (is_reconstructed) {
+          dot_col = cv::Scalar(255,100,255); // magenta for reconstructed
+          txt_col = cv::Scalar(255,100,255);
+        }
         cv::circle(dbg, sc[i], 5, dot_col, -1);
         std::string label = lbl[i];
         if (used_cache[i]) label += "(C)";  // C = Cached
+        else if (is_reconstructed) label += "(R)";  // R = Reconstructed
         if (!pts3d.empty()) label += cv::format(" %.2fm", pts3d[i].z());
         cv::putText(dbg, label, {(int)sc[i].x+5,(int)sc[i].y-5},
           cv::FONT_HERSHEY_SIMPLEX, 0.35, txt_col, 1);

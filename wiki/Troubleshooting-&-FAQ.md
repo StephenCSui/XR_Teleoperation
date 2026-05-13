@@ -279,13 +279,16 @@ Yes. Use `use_fake_hardware:=true`:
 ros2 launch ur_unity_bringup ur3e_unity_bridge.launch.py use_fake_hardware:=true
 ```
 
-### What if only 2 or 3 markers are visible?
+### What if only 1, 2, or 3 markers are visible?
 
-The detector handles partial detection:
+The detector handles partial detection down to a single marker:
 - **3 markers:** Exact reconstruction via parallelogram rule (TL+BR = TR+BL)
 - **2 adjacent markers:** Reconstruction via A4 aspect ratio
-- **2 diagonal markers:** Rejected (insufficient data)
-- **1 or 0 markers:** Rejected
+- **2 diagonal markers:** Reconstruction via diagonal angle (the diagonal makes a fixed 35.2° angle with the horizontal edge for A4)
+- **1 marker:** solvePnP on the single marker's 4 image corners to estimate its 6-DOF pose, then projects the remaining 3 canvas corners using known canvas dimensions. Approximate but functional.
+- **0 markers:** Rejected
+
+Reconstructed corners (from 1- or 2-marker recovery) are shown in the `/canvas/debug` image with dashed orange bounding boxes and magenta dots, making it easy to distinguish them from directly detected markers (cyan dots).
 
 Additionally, markers missing for fewer than `missing_frames_tol` (default 5) frames are held at their last position. The 3D cache holds positions for up to `last_known_tol` (default 300) frames (~15s) for robustness during wrist occlusion.
 
