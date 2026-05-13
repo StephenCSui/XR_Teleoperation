@@ -6,7 +6,6 @@ Launches the UR3e robot driver, MoveIt 2 motion planning, and a bridge node that
 
 **Package:** `ur_unity_bringup`
 **Build type:** `ament_python`
-**Maintainer:** Stephen Suiwinata
 
 ---
 

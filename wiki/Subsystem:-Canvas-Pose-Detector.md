@@ -1,13 +1,12 @@
 # Subsystem: Canvas Pose Detector (Camera Perception)
 
-**Owner:** Johan (Member 3)
 **Package:** `canvas_pose_detector`
 **Build type:** `ament_cmake` (C++ detection node + 7 Python nodes)
 **Version:** 0.13.0
 
 ## Purpose
 
-Detects an A4 canvas in 3D space using a wrist-mounted Intel RealSense D435if depth camera and AprilTag 36h11 corner markers. Publishes the canvas 6-DOF pose, SE3 drift correction, and a brush Z-depth constraint that Member 2's MoveIt Servo uses to keep the brush on the canvas surface.
+Detects an A4 canvas in 3D space using a wrist-mounted Intel RealSense D435if depth camera and AprilTag 36h11 corner markers. Publishes the canvas 6-DOF pose, SE3 drift correction, and a brush Z-depth constraint that MoveIt Servo uses to keep the brush on the canvas surface.
 
 This subsystem is the **perception backbone** of the teleoperation system -- without it, the robot has no knowledge of where the canvas is.
 
@@ -35,7 +34,6 @@ canvas_pose_detector/
 │   ├── canvas_depth_visualiser.py          # XZ side-view depth visualiser
 │   ├── canvas_pose_visualiser.py           # 2D/3D pose plots
 │   ├── canvas_pose_injector.py             # Synthetic pose publisher (sim mode)
-│   └── canvas_pose_follower.py             # MoveIt EEF follower (validation only)
 ├── config/
 │   ├── rviz_full.rviz
 │   └── rviz_tf_validation.rviz
@@ -87,7 +85,7 @@ The perception subsystem is a **4-stage pipeline** where each node does one job 
   CORRECTION   │  Latch reference -> compute SE3 error -> Z output │
                └───────────────────────────┬───────────────────────┘
                                            │
-               /canvas/z_constraint   PoseStamped (base_link)      -> Member 2 (MoveIt Servo)
+               /canvas/z_constraint   PoseStamped (base_link)      -> MoveIt Servo
                /canvas/pose_error     PoseStamped (canvas_centre_assumed)
                /canvas/pose_assumed   PoseStamped (latched reference)
                /canvas/correction_data String (JSON status + errors)
@@ -312,13 +310,13 @@ This is a proper SE3 inverse composition, not naive position subtraction. The er
 |---|---|---|---|
 | Subscribe | `/canvas/pose` (configurable) | PoseStamped | Live canvas pose |
 | Subscribe | `/canvas/pose_assumed` | PoseStamped | External override for reference (optional) |
-| Publish | **`/canvas/z_constraint`** | PoseStamped | **Primary output for Member 2** |
+| Publish | **`/canvas/z_constraint`** | PoseStamped | **Primary output for MoveIt Servo** |
 | Publish | `/canvas/pose_error` | PoseStamped | SE3 error in assumed frame |
 | Publish | `/canvas/pose_assumed` | PoseStamped | Latched reference pose |
 | Publish | `/canvas/correction_data` | String (JSON) | Status + all error values |
 | TF Broadcast | `canvas_centre_assumed` | -- | Latched reference frame |
 
-#### `/canvas/z_constraint` -- The Interface to Member 2
+#### `/canvas/z_constraint` -- The Interface to MoveIt Servo
 
 This is the **primary output** consumed by the robot control subsystem:
 
@@ -329,7 +327,7 @@ position.z:     canvas surface depth MINUS brush_standoff_m  (brush tip Z)
 orientation:    canvas face normal quaternion (tool must stay perpendicular)
 ```
 
-Member 2 locks the end-effector Z to `msg.pose.position.z` while allowing XY freedom for drawing strokes. The orientation keeps the brush perpendicular to the canvas face.
+MoveIt Servo locks the end-effector Z to `msg.pose.position.z` while allowing XY freedom for drawing strokes. The orientation keeps the brush perpendicular to the canvas face.
 
 #### `/canvas/correction_data` -- JSON Status
 
@@ -425,16 +423,6 @@ This JSON is consumed by Unity to show the canvas status in VR (see [Unity Integ
 | `/canvas/pose` | `/canvas/pose_2d_xy` -- X vs Y lateral/vertical plot |
 | `/canvas/viewing_angles` | `/canvas/pose_2d_xz` -- X vs Z depth/lateral bird's eye |
 | | `/canvas/pose_3d_tf` -- 3D TF frame illustration with RPY arcs |
-
----
-
-### 8. `canvas_pose_follower` (Python -- `src/canvas_pose_follower.py`)
-
-**Purpose:** Validation-only node that drives the UR3e end-effector to follow the detected canvas pose via MoveIt action server. Used for testing hand-eye calibration. **Not used in production.**
-
-**Requires:** `ros-humble-moveit-py`
-
-**Action client:** `/move_action` (MoveGroup)
 
 ---
 
@@ -581,7 +569,7 @@ ros2 param set /canvas_pose_injector animate false   # stop
 | `/canvas/debug` | Image | detector | correction_vis, rqt, Unity | Annotated camera feed |
 | `/canvas/pose_base` | PoseStamped | tf_bridge | corrector (real pipeline) | Canvas in `base_link` |
 | `/canvas/pose_tool0` | PoseStamped | tf_bridge | verification only | Canvas in `tool0` |
-| **`/canvas/z_constraint`** | **PoseStamped** | **corrector** | **Member 2 (MoveIt Servo)** | **Brush Z constraint** |
+| **`/canvas/z_constraint`** | **PoseStamped** | **corrector** | **MoveIt Servo** | **Brush Z constraint** |
 | `/canvas/pose_error` | PoseStamped | corrector | visualisers | SE3 error |
 | `/canvas/pose_assumed` | PoseStamped | corrector | depth_vis, correction_vis | Latched reference |
 | `/canvas/correction_data` | String (JSON) | corrector | Unity, visualisers | Status + errors |
@@ -596,7 +584,7 @@ ros2 param set /canvas_pose_injector animate false   # stop
 
 ## Interface with Other Subsystems
 
-### Interface with Member 2 -- MoveIt Servo (Stephen)
+### Interface with MoveIt Servo (`ur_unity_bringup`)
 
 **Primary topic:** `/canvas/z_constraint` (PoseStamped, frame: `base_link`)
 
@@ -606,9 +594,9 @@ position.z    = canvas surface depth MINUS brush_standoff_m  (where the brush ti
 orientation   = canvas face normal quaternion (tool stays perpendicular to canvas)
 ```
 
-Member 2 locks EEF Z to `msg.pose.position.z` while allowing XY freedom for strokes. After hand-eye calibration, the frame is already `base_link` -- no additional transforms needed on Member 2's side.
+MoveIt Servo locks EEF Z to `msg.pose.position.z` while allowing XY freedom for strokes. After hand-eye calibration, the frame is already `base_link` -- no additional transforms needed.
 
-### Interface with Member 1 -- Unity / VR (Han)
+### Interface with Unity / VR
 
 **Topics consumed by Unity:**
 

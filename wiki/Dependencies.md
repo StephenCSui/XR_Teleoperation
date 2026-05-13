@@ -104,6 +104,5 @@ sudo apt install python3-numpy
 
 | Software | Purpose |
 |---|---|
-| `ros-humble-moveit-py` | Python MoveIt bindings (for `canvas_pose_follower` validation node) |
 | URSim | UR robot simulator for testing without physical robot |
 | `rqt` | ROS 2 GUI for topic inspection |
