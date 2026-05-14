@@ -4,6 +4,24 @@
 **Build type:** `ament_cmake` (C++ detection node + 7 Python nodes)
 **Version:** 0.13.0
 
+## Table of Contents
+
+1. [Purpose](#purpose)
+2. [Package Layout](#package-layout)
+3. [Pipeline Architecture](#pipeline-architecture)
+4. [Nodes (Detailed)](#nodes-detailed)
+5. [How to Run](#how-to-run)
+6. [Live Parameter Tuning](#live-parameter-tuning)
+7. [All Topics Summary](#all-topics-summary)
+8. [Interface with Other Subsystems](#interface-with-other-subsystems)
+9. [AprilTag Marker Setup](#apriltag-marker-setup)
+10. [Architecture Decisions](#architecture-decisions)
+11. [Diagnostic Commands](#diagnostic-commands)
+12. [Known Limitations](#known-limitations)
+13. [Troubleshooting (Subsystem-Specific)](#troubleshooting-subsystem-specific)
+
+---
+
 ## Purpose
 
 Detects an A4 canvas in 3D space using a wrist-mounted Intel RealSense D435if depth camera and AprilTag 36h11 corner markers. Publishes the canvas 6-DOF pose, SE3 drift correction, and a brush Z-depth constraint that MoveIt Servo uses to keep the brush on the canvas surface.
