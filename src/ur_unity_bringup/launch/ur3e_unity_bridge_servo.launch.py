@@ -2,7 +2,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node, SetParameter
+from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -14,6 +14,7 @@ def generate_launch_description():
     ros_ip               = LaunchConfiguration("ros_ip")
     ros_tcp_port         = LaunchConfiguration("ros_tcp_port")
     moveit_launch_rviz   = LaunchConfiguration("moveit_launch_rviz")
+    debug_ee_forward     = LaunchConfiguration("debug_ee_forward")
 
     ur_driver_share = FindPackageShare("ur_robot_driver")
     ur_moveit_share = FindPackageShare("ur_moveit_config")
@@ -52,21 +53,6 @@ def generate_launch_description():
             "use_fake_hardware": use_fake_hardware,
             "launch_rviz": moveit_launch_rviz,
         }.items(),
-    )
-
-    # Keep forward_velocity_controller in the stopper's safe list so it is not
-    # deactivated when robot_program_running transitions during reconnect.
-    # Extend this list if the UR driver default safe controllers change.
-    controller_stopper_consistent = SetParameter(
-        name="consistent_controllers",
-        value=[
-            "joint_state_broadcaster",
-            "io_and_status_controller",
-            "speed_scaling_state_broadcaster",
-            "force_torque_sensor_broadcaster",
-            "forward_velocity_controller",
-        ],
-        # Target the controller_stopper node specifically
     )
 
     ee_tf_to_pose = Node(
@@ -152,7 +138,7 @@ def generate_launch_description():
             "proximity_smoothing_alpha": 0.5,
 
             # ---- Debug ----
-            "debug_canvas": True,
+            "debug_canvas": False,
         }],
     )
 
@@ -168,7 +154,8 @@ def generate_launch_description():
         executable="unity_authority_filter_servo",
         name="unity_authority_filter_servo",
         output="screen",
-        arguments=["--ros-args", "--log-level", "warn"],
+        arguments=["--ros-args", "--log-level", "info",
+                   "--log-level", "moveit_robot_state.robot_state:=fatal"],
         parameters=[{
             "hand_topic": "/unity/hand_pose",
             "robot_ee_topic": "/robot/ee_pose",
@@ -260,6 +247,13 @@ def generate_launch_description():
             "precision_scale_at_min": 0.20,
             "precision_scale_at_max": 0.50,
 
+            # ---- Canvas plane constraint ----
+            # canvas_stop_plane_x: hard forward limit (base_link X) in normal mode
+            # canvas_touch_plane_x: forward limit when pen-down trigger is held
+            "canvas_stop_plane_x": 0.42,
+            "canvas_touch_plane_x": 0.44,
+            "pen_down_topic": "/unity/pen_down",
+
             # ---- Mode manager topic names (change only if remapped) ----
             "mode_topic": "/teleop_mode/active_mode",
             "proximity_topic": "/teleop_mode/canvas_proximity",
@@ -274,9 +268,12 @@ def generate_launch_description():
             "anchor_settle_ms": 150.0,
 
             # ---- Debug ----
-            "debug_verbose": False,
-            "debug_rpy": False,
+            "debug_verbose": True,
+            "debug_rpy": True,
             "debug_raw_hand_quat": False,
+            # debug_ee_forward: prints EE forward vector in base_link at 2s throttle
+            # compare against Unity HUD hand[ROS] readout — numbers should match
+            "debug_ee_forward": debug_ee_forward,
             # debug_canvas: shows blended tuning values at 250 ms throttle
             "debug_canvas": False,
         }],
@@ -295,12 +292,12 @@ def generate_launch_description():
             "base_frame": "base_link",
             # Conservative gains for physical UR3e — pure P-controller oscillates at
             # high gain due to real actuator latency. Tune upward from here once stable.
-            "linear_gain": 1.5,       # was 4.0 — reduce if still jittering
+            "linear_gain": 2.0,       # was 4.0 — reduce if still jittering
             "angular_gain": 2.0,      # was 3.0
-            "max_linear_speed": 0.06, # was 0.15 m/s — keeps velocity in safe range
+            "max_linear_speed": 0.08, # was 0.15 m/s — keeps velocity in safe range
             "max_angular_speed": 0.4, # was 0.8 rad/s
-            "position_deadband_m": 0.002,  # was 0.001 — slightly wider to absorb noise
-            "angle_deadband_rad": 0.02,    # was 0.01
+            "position_deadband_m": 0.005,  # was 0.001 — widened to reduce jackhammer at higher robot speed
+            "angle_deadband_rad": 0.03,    # was 0.01
             "publish_rate_hz": 60.0,
             "debug_verbose": False,
         }],
@@ -338,8 +335,7 @@ def generate_launch_description():
         DeclareLaunchArgument("ros_ip",       default_value="127.0.0.1"),
         DeclareLaunchArgument("ros_tcp_port", default_value="10000"),
         DeclareLaunchArgument("moveit_launch_rviz", default_value="false"),
-
-        controller_stopper_consistent,
+        DeclareLaunchArgument("debug_ee_forward",   default_value="false"),
 
         ur_control,
         ros_tcp_server,

@@ -197,18 +197,18 @@ static Eigen::Quaterniond step_clamp_world_quat(
   return q_last.slerp(t, q_target).normalized();
 }
 
-static Eigen::Quaterniond unity_relative_local_to_ros_relative(
+static Eigen::Quaterniond unity_relative_world_to_ros_relative(
   const geometry_msgs::msg::Quaternion & q_anchor_unity_msg,
   const geometry_msgs::msg::Quaternion & q_curr_unity_msg)
 {
   const Eigen::Quaterniond q_anchor_u = msg_to_eigen(q_anchor_unity_msg).normalized();
   const Eigen::Quaterniond q_curr_u   = msg_to_eigen(q_curr_unity_msg).normalized();
 
-  const Eigen::Matrix3d r_rel_u_local =
-    q_anchor_u.toRotationMatrix().transpose() * q_curr_u.toRotationMatrix();
+  const Eigen::Matrix3d r_rel_u_world =
+    q_curr_u.toRotationMatrix() * q_anchor_u.toRotationMatrix().transpose();
 
   const Eigen::Matrix3d c = unity_to_ros_basis();
-  return Eigen::Quaterniond(c * r_rel_u_local * c.transpose()).normalized();
+  return Eigen::Quaterniond(c * r_rel_u_world * c.transpose()).normalized();
 }
 
 // ---------------------------------------------------------------------------
@@ -258,10 +258,6 @@ public:
     teleop_enable_topic_ = declare_parameter<std::string>("teleop_enable_topic", "/unity/teleop_enabled");
     base_frame_          = declare_parameter<std::string>("base_frame",         "base_link");
 
-    joint_states_topic_ = declare_parameter<std::string>("joint_states_topic", "/joint_states");
-    group_name_         = declare_parameter<std::string>("group_name",         "ur_manipulator");
-    ee_link_            = declare_parameter<std::string>("ee_link",            "tool0");
-
     rate_hz_         = declare_parameter<double>("rate_hz",          60.0);
     position_scale_  = declare_parameter<double>("position_scale",   1.0);
 
@@ -281,9 +277,10 @@ public:
     max_angle_from_anchor_deg_ = declare_parameter<double>("max_angle_from_anchor_deg", 45.0);
     max_cmd_angle_step_deg_  = declare_parameter<double>("max_cmd_angle_step_deg",  5.0);
 
-    debug_verbose_        = declare_parameter<bool>("debug_verbose",        true);
-    debug_rpy_            = declare_parameter<bool>("debug_rpy",            true);
-    debug_raw_hand_quat_  = declare_parameter<bool>("debug_raw_hand_quat",  true);
+    debug_verbose_        = declare_parameter<bool>("debug_verbose",        false);
+    debug_rpy_            = declare_parameter<bool>("debug_rpy",            false);
+    debug_raw_hand_quat_  = declare_parameter<bool>("debug_raw_hand_quat",  false);
+    debug_ee_forward_     = declare_parameter<bool>("debug_ee_forward",     false);
 
     angular_deadband_rad_      = angular_deadband_deg_      * kPi / 180.0;
     max_angle_from_anchor_rad_ = max_angle_from_anchor_deg_ * kPi / 180.0;
@@ -461,6 +458,24 @@ public:
       });
 
     // ------------------------------------------------------------------ //
+    // Canvas plane constraint                                              //
+    // EE cannot pass canvas_stop_plane_x_ in base_link X during normal   //
+    // operation. When pen_down is true, limit relaxes to                  //
+    // canvas_touch_plane_x_, allowing the tool to press onto the surface. //
+    // ------------------------------------------------------------------ //
+    canvas_stop_plane_x_  = declare_parameter<double>("canvas_stop_plane_x",  0.42);
+    canvas_touch_plane_x_ = declare_parameter<double>("canvas_touch_plane_x", 0.44);
+
+    const std::string pen_down_topic =
+      declare_parameter<std::string>("pen_down_topic", "/unity/pen_down");
+
+    sub_pen_down_ = create_subscription<std_msgs::msg::Bool>(
+      pen_down_topic, 10,
+      [this](std_msgs::msg::Bool::SharedPtr msg) {
+        pen_down_ = msg->data;
+      });
+
+    // ------------------------------------------------------------------ //
     // Existing subscriptions and publisher                                 //
     // ------------------------------------------------------------------ //
     sub_hand_ = create_subscription<PoseStamped>(
@@ -511,10 +526,11 @@ private:
 
   void clear_anchor()
   {
-    anchor_latched_     = false;
-    have_last_command_  = false;
-    is_detached_        = false;
-    have_nudge_         = false;
+    anchor_latched_       = false;
+    have_last_command_    = false;
+    is_detached_          = false;
+    have_nudge_           = false;
+    canvas_plane_armed_   = false;
   }
 
   void latch_anchor()
@@ -552,7 +568,7 @@ private:
       return ee_anchor_.pose.orientation;
     }
 
-    Eigen::Quaterniond q_rel = unity_relative_local_to_ros_relative(
+    Eigen::Quaterniond q_rel = unity_relative_world_to_ros_relative(
       hand_anchor_.pose.orientation, latest_hand_.pose.orientation);
 
     q_rel = zero_small_relative_quat(q_rel, angular_deadband_rad_);
@@ -561,7 +577,7 @@ private:
     const Eigen::Quaterniond q_ee_anchor =
       msg_to_eigen(ee_anchor_.pose.orientation).normalized();
 
-    Eigen::Quaterniond q_target = (q_ee_anchor * q_rel).normalized();
+    Eigen::Quaterniond q_target = (q_rel * q_ee_anchor).normalized();
 
     if (have_last_command_) {
       const Eigen::Quaterniond q_last =
@@ -850,7 +866,7 @@ private:
       const geometry_msgs::msg::Quaternion hand_ros_abs_q =
         unity_quat_to_ros_base(latest_hand_.pose.orientation);
 
-      const Eigen::Quaterniond q_rel_dbg = unity_relative_local_to_ros_relative(
+      const Eigen::Quaterniond q_rel_dbg = unity_relative_world_to_ros_relative(
         hand_anchor_.pose.orientation, latest_hand_.pose.orientation);
       const geometry_msgs::msg::Quaternion hand_ros_rel_q = eigen_to_msg(q_rel_dbg);
 
@@ -870,10 +886,25 @@ private:
     }
 
     // ------------------------------------------------------------------ //
+    // Debug: EE forward vector in base_link (+X axis of EE frame).       //
+    // Compare against Unity HUD which prints hand forward remapped to ROS //
+    // axes. Numbers should match when hand and EE point the same way.    //
+    // ------------------------------------------------------------------ //
+    if (debug_ee_forward_) {
+      const Eigen::Quaterniond q_ee =
+        msg_to_eigen(latest_ee_.pose.orientation).normalized();
+      const Eigen::Vector3d ee_fwd = q_ee.toRotationMatrix() * Eigen::Vector3d(1.0, 0.0, 0.0);
+      RCLCPP_INFO_THROTTLE(
+        get_logger(), *get_clock(), 2000,
+        "[EE_FWD] (%.3f, %.3f, %.3f)",
+        ee_fwd.x(), ee_fwd.y(), ee_fwd.z());
+    }
+
+    // ------------------------------------------------------------------ //
     // Debug: verbose state                                                 //
     // ------------------------------------------------------------------ //
     if (debug_verbose_) {
-      const Eigen::Quaterniond q_rel_dbg = unity_relative_local_to_ros_relative(
+      const Eigen::Quaterniond q_rel_dbg = unity_relative_world_to_ros_relative(
         hand_anchor_.pose.orientation, latest_hand_.pose.orientation);
       const double rel_angle_deg = quat_shortest_angle(q_rel_dbg) * 180.0 / kPi;
 
@@ -929,6 +960,7 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr sub_precision_box_size_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr      sub_detach_mode_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr sub_nudge_cmd_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr      sub_pen_down_;
 
   rclcpp::Publisher<PoseStamped>::SharedPtr         pub_command_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pub_precision_exit_;
@@ -939,7 +971,6 @@ private:
   // -------------------------------------------------------------------- //
   std::string hand_topic_, robot_ee_topic_, command_topic_;
   std::string teleop_enable_topic_, base_frame_;
-  std::string joint_states_topic_, group_name_, ee_link_;
   std::string orientation_mode_;
 
   double rate_hz_, position_scale_;
@@ -948,7 +979,7 @@ private:
   double angular_deadband_deg_, angular_deadband_rad_;
   double max_angle_from_anchor_deg_, max_angle_from_anchor_rad_;
   double max_cmd_angle_step_deg_, max_cmd_angle_step_rad_;
-  bool   debug_verbose_, debug_rpy_, debug_raw_hand_quat_;
+  bool   debug_verbose_, debug_rpy_, debug_raw_hand_quat_, debug_ee_forward_;
 
   // -------------------------------------------------------------------- //
   // Tuning profiles                                                        //
@@ -984,6 +1015,10 @@ private:
   // -------------------------------------------------------------------- //
   bool                          is_detached_{false};
   bool                          have_nudge_{false};
+  bool                          pen_down_{false};
+  bool                          canvas_plane_armed_{false};
+  double                        canvas_stop_plane_x_{0.42};
+  double                        canvas_touch_plane_x_{0.44};
   geometry_msgs::msg::Twist     pending_nudge_{};
   double                        nudge_step_m_{0.005};
   double                        nudge_step_rad_{0.0};
