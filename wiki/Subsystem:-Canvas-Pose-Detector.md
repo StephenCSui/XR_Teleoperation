@@ -28,6 +28,7 @@ canvas_pose_detector/
 │   ├── canvas_tf_bridge.launch.py          # TF bridge + corrector
 │   ├── canvas_stroke_corrector.launch.py   # Corrector only
 │   ├── canvas_tf_bridge_validation.launch.py
+│   ├── workspace_camera.launch.py          # Camera B tripod workspace viewer
 │   └── canvas_pose_validation.launch.py    # Legacy
 ├── src/
 │   ├── canvas_pose_detector.cpp            # C++ AprilTag detection (1347 lines)
@@ -472,6 +473,74 @@ This JSON is consumed by Unity to show the canvas status in VR (see [Unity Integ
 
 ---
 
+### 8. Workspace Camera B (Launch-only -- `launch/workspace_camera.launch.py`)
+
+**Purpose:** Streams RGB video from a second tripod-mounted RealSense D435i camera for external workspace viewing. This camera provides a wide-angle overview of the robot and canvas area, which Unity displays in the VR GUI so the operator can see the physical workspace.
+
+**No ROS node code required** -- this launch file configures the stock `realsense2_camera_node` with depth/infrared disabled (RGB only) under a separate `/workspace_cam/` namespace to avoid conflicts with Camera A (wrist-mounted).
+
+#### Published Topics
+
+| Topic | Type | Rate | Description |
+|---|---|---|---|
+| `/workspace_cam/color/image_raw` | `sensor_msgs/Image` | 30 Hz | RGB workspace overview feed |
+| `/workspace_cam/color/camera_info` | `sensor_msgs/CameraInfo` | 30 Hz | Camera B intrinsics |
+
+#### Launch Arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `serial_no` | (auto) | RealSense serial number. Required when two cameras are connected |
+| `fps` | `30` | RGB frame rate (6, 15, 30) |
+| `width` | `640` | RGB width (424, 640, 848, 1280) |
+| `height` | `480` | RGB height (240, 480, 720, 800) |
+| `open_viewer` | `true` | Open `rqt_image_view` for local testing without Unity |
+
+#### How to Run (Testing without Unity)
+
+```bash
+# Find Camera B serial number (if two cameras connected):
+rs-enumerate-devices | grep "Serial Number"
+
+# Launch with auto-detect (only one camera connected):
+ros2 launch canvas_pose_detector workspace_camera.launch.py
+
+# Launch with specific serial (two cameras connected):
+ros2 launch canvas_pose_detector workspace_camera.launch.py \
+  serial_no:=<CAMERA_B_SERIAL>
+
+# Without the built-in viewer (Unity consumes the feed directly):
+ros2 launch canvas_pose_detector workspace_camera.launch.py \
+  open_viewer:=false
+```
+
+The launch file opens `rqt_image_view` automatically on `/workspace_cam/color/image_raw`. To verify the topic is publishing:
+
+```bash
+ros2 topic hz /workspace_cam/color/image_raw    # Expect ~30 Hz
+ros2 topic info /workspace_cam/color/image_raw   # Check subscribers
+```
+
+#### Running Both Cameras Simultaneously
+
+```bash
+# Terminal 1: Camera A (wrist-mounted) + perception pipeline
+ros2 launch realsense2_camera rs_launch.py \
+  serial_no:=<CAMERA_A_SERIAL> enable_sync:=true align_depth.enable:=true
+
+# Terminal 2: Perception pipeline
+ros2 launch canvas_pose_detector canvas_real_pipeline.launch.py
+
+# Terminal 3: Camera B (tripod workspace view)
+ros2 launch canvas_pose_detector workspace_camera.launch.py \
+  serial_no:=<CAMERA_B_SERIAL>
+```
+
+<!-- TODO: Insert screenshot of workspace camera feed -->
+![Workspace camera feed](images/workspace_cam_feed.png)
+
+---
+
 ## How to Run
 
 ### Simulation (No Hardware -- Recommended for First Test)
@@ -624,6 +693,7 @@ ros2 param set /canvas_pose_injector animate false   # stop
 | `/canvas/depth_view` | Image | depth_vis | rqt | XZ depth side-view |
 | `/canvas/pose_2d_xy` | Image | pose_vis | rqt | X vs Y plot |
 | `/canvas/pose_2d_xz` | Image | pose_vis | rqt | X vs Z plot |
+| `/workspace_cam/color/image_raw` | Image | workspace_cam | Unity | Tripod workspace overview feed |
 
 ---
 
