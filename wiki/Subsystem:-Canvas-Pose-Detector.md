@@ -92,7 +92,7 @@ The perception subsystem is a **4-stage pipeline** where each node does one job 
                /canvas/z_constraint   PoseStamped (base_link)      -> MoveIt Servo
                /canvas/pose_error     PoseStamped (canvas_centre_assumed)
                /canvas/pose_assumed   PoseStamped (latched reference)
-               /canvas/correction_data String (JSON status + errors)
+               /canvas/correction_data String (JSON diagnostic)
                TF: canvas_centre_assumed
                                            │
                                            v
@@ -372,7 +372,7 @@ MoveIt Servo locks the end-effector Z to `msg.pose.position.z` while allowing XY
 }
 ```
 
-This JSON is consumed by Unity to show the canvas status in VR (see [Unity Integration Guide](Unity-Integration-Guide.md)).
+This JSON is consumed by the visualiser nodes (`canvas_correction_visualiser`, `canvas_depth_visualiser`) for rendering error plots, and can be echoed on the command line for validation and testing.
 
 #### Parameters
 
@@ -687,7 +687,7 @@ ros2 param set /canvas_pose_injector animate false   # stop
 | **`/canvas/z_constraint`** | **PoseStamped** | **corrector** | **MoveIt Servo** | **Brush Z constraint** |
 | `/canvas/pose_error` | PoseStamped | corrector | visualisers | SE3 error |
 | `/canvas/pose_assumed` | PoseStamped | corrector | depth_vis, correction_vis | Latched reference |
-| `/canvas/correction_data` | String (JSON) | corrector | Unity, visualisers | Status + errors |
+| `/canvas/correction_data` | String (JSON) | corrector | visualisers, testing | Status + errors (diagnostic only) |
 | `/canvas/correction_2d` | Image | correction_vis | rqt | Top-down error plot |
 | `/canvas/debug_corrected` | Image | correction_vis | rqt | Camera overlay + drift |
 | `/canvas/depth_view` | Image | depth_vis | rqt | XZ depth side-view |
@@ -718,8 +718,8 @@ MoveIt Servo locks EEF Z to `msg.pose.position.z` while allowing XY freedom for 
 | Topic | Use |
 |---|---|
 | `/canvas/pose` | Position and orient the virtual canvas in VR |
-| `/canvas/correction_data` | Show status (WAITING/COLLECTING/OK/PAUSED) and drift in the VR UI |
 | `/canvas/debug` | Display live camera feed in VR |
+| `/workspace_cam/color/image_raw` | Tripod workspace overview feed |
 | TF `canvas_marker_TL/TR/BR/BL` | Place corner indicator spheres in VR |
 
 **Topic published by Unity:**
