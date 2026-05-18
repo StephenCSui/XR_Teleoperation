@@ -1,0 +1,60 @@
+WSL2 Setup Notes — XR Teleoperation
+=====================================
+
+The ROS stack runs in WSL2. Unity runs natively on Windows.
+Unity cannot reach ROS via 127.0.0.1 because WSL2 has its own
+virtual network with a separate IP address.
+
+
+EVERY SESSION — find the WSL2 IP
+----------------------------------
+Run this inside WSL2:
+
+    ip addr show eth0 | grep inet
+
+The IP changes on each WSL2 restart, so check it each session.
+
+
+LAUNCHING
+----------
+Pass the WSL2 IP as ros_ip when launching:
+
+    ros2 launch ur_unity_bringup ur3e_unity_bridge_servo.launch.py \
+        ros_ip:=<WSL2_IP> \
+        use_fake_hardware:=true
+
+For physical UR3e, also pass the robot IP:
+
+    ros2 launch ur_unity_bringup ur3e_unity_bridge_servo.launch.py \
+        ros_ip:=<WSL2_IP> \
+        robot_ip:=<ROBOT_IP> \
+        use_fake_hardware:=false
+
+
+UNITY SIDE
+-----------
+In the Unity ROSConnection component, set the ROS IP field
+to the same WSL2 IP address found above.
+Port stays 10000 (default).
+
+
+PHYSICAL ROBOT
+---------------
+WSL2 can reach the local network through the Windows host.
+Before launching, verify the robot is reachable from inside WSL2:
+
+    ping <ROBOT_IP>
+
+If ping fails, check that the robot and the Windows machine
+are on the same network and that no firewall is blocking it.
+
+
+NOTES
+------
+- WSL1 does NOT work — ROS 2 DDS networking requires the full
+  Linux kernel that only WSL2 provides.
+- RViz: works natively on Windows 11 (WSLg). On Windows 10
+  you need an X server (e.g. VcXsrv) and to set DISPLAY.
+- Real-time performance: WSL2 has no RT kernel, same as a
+  standard Ubuntu install. Conservative servo gains are already
+  set in the launch file for this reason.
