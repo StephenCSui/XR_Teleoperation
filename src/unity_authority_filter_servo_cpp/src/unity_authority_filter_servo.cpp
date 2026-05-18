@@ -833,6 +833,14 @@ private:
     }
 
     // ------------------------------------------------------------------ //
+    // Canvas plane clamp                                                   //
+    // Stop plane holds position until pen_down; touch plane allows press. //
+    // ------------------------------------------------------------------ //
+    const double plane_limit = pen_down_ ? canvas_touch_plane_x_ : canvas_stop_plane_x_;
+    if (cmd_pos.x > plane_limit)
+      cmd_pos.x = plane_limit;
+
+    // ------------------------------------------------------------------ //
     // Build and publish command                                            //
     // ------------------------------------------------------------------ //
     PoseStamped cmd;

@@ -250,8 +250,8 @@ def generate_launch_description():
             # ---- Canvas plane constraint ----
             # canvas_stop_plane_x: hard forward limit (base_link X) in normal mode
             # canvas_touch_plane_x: forward limit when pen-down trigger is held
-            "canvas_stop_plane_x": 0.42,
-            "canvas_touch_plane_x": 0.44,
+            "canvas_stop_plane_x": 0.45,
+            "canvas_touch_plane_x": 0.47,
             "pen_down_topic": "/unity/pen_down",
 
             # ---- Mode manager topic names (change only if remapped) ----
@@ -293,9 +293,9 @@ def generate_launch_description():
             # Conservative gains for physical UR3e — pure P-controller oscillates at
             # high gain due to real actuator latency. Tune upward from here once stable.
             "linear_gain": 2.0,       # was 4.0 — reduce if still jittering
-            "angular_gain": 2.0,      # was 3.0
+            "angular_gain": 3.0,      # was 3.0
             "max_linear_speed": 0.08, # was 0.15 m/s — keeps velocity in safe range
-            "max_angular_speed": 0.4, # was 0.8 rad/s
+            "max_angular_speed": 0.6, # was 0.8 rad/s
             "position_deadband_m": 0.005,  # was 0.001 — widened to reduce jackhammer at higher robot speed
             "angle_deadband_rad": 0.03,    # was 0.01
             "publish_rate_hz": 60.0,
