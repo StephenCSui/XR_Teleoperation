@@ -12,11 +12,11 @@ ros2 topic info /servo_node/delta_twist_cmds --verbose | grep "Publisher count"
 
 Fix: run the full clean reset before every launch.
 
-## Canvas appears behind you in the headset
+## Canvas appears behind you or sideways in the headset
 
-You were not facing the laptop/robot when putting on the Quest 2. The headset sets its VR forward direction based on which way you face at startup.
+The APK auto-corrects VR orientation at startup — the scene rotates so the canvas is always in front of you on launch. If the canvas still appears wrong, the EE pose from ROS did not arrive before the snap fired.
 
-Fix: remove the headset, face the laptop/robot, put it back on, then relaunch the APK.
+Fix: ensure ROS is fully running before launching the APK. If the issue persists, relaunch the APK.
 
 ## Command box jumps away from hand on teleop enable
 
@@ -56,6 +56,24 @@ Fix:
 ```bash
 cd ~/XR_Teleoperation && colcon build --packages-select unity_authority_filter_servo_cpp && source install/setup.bash
 ```
+
+## PRECISION mode — A button does nothing
+
+The EE is not at the stop plane yet. Entry requires ROS x ≥ 0.44 m (approximately the position reached when the EE is at the canvas stop plane).
+
+Fix: move the robot forward in NORMAL mode until the EE reaches the stop plane, then press A.
+
+## PRECISION mode — thumbstick has no effect on EE
+
+The `PrecisionBoxPublisher` component on the ModeControl GameObject is enabled. When active it publishes a bounding box at world origin; the authority filter sees the hand outside the box and freezes the EE command.
+
+Fix: in Unity, select ModeControl → Inspector → uncheck PrecisionBoxPublisher. Rebuild the APK.
+
+## Command box rotates 90° when entering PRECISION mode
+
+The virtual hand orientation was initialised from the EE ROS orientation, which includes a Wrist3=90° offset. The filter's relative rotation computation then issues a 90° command at mode entry.
+
+Fix: this is resolved in the current build — `_virtualHandRot` is now initialised from the physical controller rotation so the filter sees no discontinuity. If the jump reappears, verify `TeleopModeController.EnterPrecision()` reads `handPosePublisher.transform.rotation`, not the EE quaternion.
 
 ## Known Limitations
 

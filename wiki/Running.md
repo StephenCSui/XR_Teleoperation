@@ -51,7 +51,7 @@ Keep teach pendant speed at 40% or below to avoid oscillation.
 
 ## Step 5 — Put on headset and start APK
 
-**Face the laptop/robot when putting on the Quest 2.** The headset sets its VR forward direction based on which way you are facing at startup. Facing the wrong direction places the canvas behind you.
+Put on the Quest 2 and launch the APK. The app automatically rotates the scene to place the canvas in front of you regardless of which direction you are facing.
 
 ```bash
 adb shell monkey -p com.StephenCSui.XRTeleop 1
@@ -62,6 +62,20 @@ adb shell monkey -p com.StephenCSui.XRTeleop 1
 In the headset, press the teleop enable button (trigger or T key in keyboard mode). The hand will snap to the robot EE position. Move the controller to drive the robot.
 
 Hold the right trigger to activate pen-down mode — the robot can press up to 2cm past the canvas stop plane.
+
+### Precision mode
+
+Precision mode locks hand tracking and gives thumbstick control of the EE directly against the canvas.
+
+| Button | Action |
+|--------|--------|
+| **A** (at stop plane) | Enter PRECISION mode |
+| Thumbstick | Move EE along canvas (X/Y only; pen-down is always active) |
+| **Trigger** | Half speed |
+| **B** | Toggle position / yaw-pitch orientation control |
+| **A** (in PRECISION) | Exit — returns to normal hand tracking |
+
+Entry is gated: A only triggers PRECISION when the EE is at or past the stop plane (ROS x ≥ 0.44 m). The HUD in the headset shows the current mode and active control.
 
 ## Screen recording
 
