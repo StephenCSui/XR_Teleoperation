@@ -555,7 +555,7 @@ ros2 launch canvas_pose_detector workspace_camera.launch.py \
 ```
 
 <!-- TODO: Insert screenshot of workspace camera feed -->
-![Workspace camera feed](images/workspace_cam_feed.png)
+<!-- ![Workspace camera feed](images/workspace_cam_feed.png) -->
 
 ---
 
