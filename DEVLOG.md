@@ -99,3 +99,37 @@ Unity-side entries are included where documented; gaps exist because Unity lives
 - APK runs on Quest 2, end-to-end servo pipeline confirmed working in VR
 - Orientation control direction not yet verified against robot (debug flag added for this)
 - Canvas configuration deferred — user has a physical approach planned
+
+---
+
+## Phase 6 — Canvas Plane Tuning + PRECISION Pen-Down Fix (May 2026)
+
+### Plane positions shifted 3 cm closer to robot
+
+| Parameter | Old | New |
+|---|---|---|
+| `canvas_stop_plane_x` | −0.45 | −0.42 |
+| `canvas_touch_plane_x` | −0.49 | −0.46 |
+| Stop→touch gap | 4 cm | 4 cm (unchanged) |
+
+Files changed: `ur3e_unity_bridge_servo.launch.py`, `TeleopModeController.cs` (`stopPlaneRosX`).
+
+### Joint angles updated — required for plane shift to be safe
+
+Old joints: Base=180°, Shoulder=−60°, Elbow=80°, Wrist1=−20°, Wrist2=−270°, Wrist3=90°  
+→ EE starting X = **−0.414 m** — already past the new stop plane (−0.42). Would cause robot to jerk backward on teleop enable.
+
+New joints: Base=180°, Shoulder=−65°, Elbow=105°, Wrist1=−40°, Wrist2=−270°, Wrist3=90°  
+→ EE starting X = **−0.358 m** — 6 cm behind new stop plane. Safe.
+
+Y and Z are unchanged (0.131, 0.150). The joint change pulls the EE back ~5.6 cm in X while keeping lateral position the same.
+
+**Rule established:** EE starting X must be less negative than `canvas_stop_plane_x`. Check this whenever planes are moved or starting joints change. FK formula used: UR3e standard DH (d=[0.15185, 0, 0, 0.13105, 0.08535, 0.0921], a=[0, −0.24355, −0.21325, 0, 0, 0]).
+
+### PRECISION mode pen-down fix
+
+**Root cause of old failure:** Virtual hand Z was set only 5 cm past the stop plane (`stopPlaneRosX − 0.05`). With position_scale=0.5, the scaled command delta only reached ~2.5 cm past stop — never enough to touch the touch plane (4 cm gap). Trigger held → pen_down=true → filter unlocked to touch plane — but the target was short of the touch plane anyway, so robot barely moved.
+
+**Fix:** Virtual Z push increased to 0.30 m (`stopPlaneRosX − 0.30`). Scaled delta now overshoots touch plane; the plane clamp brings robot exactly to −0.46. pen_down stays trigger-gated in both NORMAL and PRECISION (no behaviour change between modes).
+
+File changed: `TeleopModeController.cs` (`EnterPrecision()`).

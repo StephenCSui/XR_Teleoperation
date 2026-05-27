@@ -105,7 +105,8 @@ static geometry_msgs::msg::Point clamp_point_norm(
 
 static geometry_msgs::msg::Point unity_to_ros_delta(const geometry_msgs::msg::Point & u)
 {
-  return make_point(u.z, -u.x, u.y);
+  // Base rotated 180° around Z: ROS X = -Unity Z, ROS Y = +Unity X, ROS Z = +Unity Y
+  return make_point(-u.z, u.x, u.y);
 }
 
 static geometry_msgs::msg::Point ros_to_unity_position(const geometry_msgs::msg::Point & r)
@@ -116,8 +117,9 @@ static geometry_msgs::msg::Point ros_to_unity_position(const geometry_msgs::msg:
 static Eigen::Matrix3d unity_to_ros_basis()
 {
   Eigen::Matrix3d c;
-  c <<  0.0,  0.0,  1.0,
-       -1.0,  0.0,  0.0,
+  // Base rotated 180° around Z: ROS X = -Unity Z, ROS Y = +Unity X, ROS Z = +Unity Y
+  c <<  0.0,  0.0, -1.0,
+        1.0,  0.0,  0.0,
         0.0,  1.0,  0.0;
   return c;
 }
@@ -837,7 +839,7 @@ private:
     // Stop plane holds position until pen_down; touch plane allows press. //
     // ------------------------------------------------------------------ //
     const double plane_limit = pen_down_ ? canvas_touch_plane_x_ : canvas_stop_plane_x_;
-    if (cmd_pos.x > plane_limit)
+    if (cmd_pos.x < plane_limit)
       cmd_pos.x = plane_limit;
 
     // ------------------------------------------------------------------ //

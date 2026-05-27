@@ -54,6 +54,7 @@ def generate_launch_description():
         name='workspace_cam',
         namespace='workspace_cam',
         output='screen',
+        arguments=['--ros-args', '--log-level', 'error'],
         parameters=[{
             'serial_no':              LaunchConfiguration('serial_no'),
             'camera_name':            'workspace_cam',
@@ -61,6 +62,9 @@ def generate_launch_description():
             'enable_depth':           False,
             'enable_infra1':          False,
             'enable_infra2':          False,
+            'enable_accel':           False,
+            'enable_gyro':            False,
+            'enable_color_to_depth':  False,
             'rgb_camera.color_profile': LaunchConfiguration('width') ,
             'color_width':            LaunchConfiguration('width'),
             'color_height':           LaunchConfiguration('height'),

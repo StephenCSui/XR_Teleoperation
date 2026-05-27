@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -91,11 +92,11 @@ def generate_launch_description():
 
             # canvas_center_xyz: position of canvas centre in base_link (m)
             # TUNE: measure from robot base to canvas surface centre
-            "canvas_center_xyz": [0.5, 0.0, 0.2],
+            "canvas_center_xyz": [-0.5, 0.0, 0.2],
 
             # canvas_normal_xyz: direction pointing away from canvas toward robot
             # TUNE: set to match actual canvas orientation
-            "canvas_normal_xyz": [1.0, 0.0, 0.0],
+            "canvas_normal_xyz": [-1.0, 0.0, 0.0],
 
             # canvas_up_xyz: canvas "up" direction in base_link
             # TUNE: must not be parallel to canvas_normal_xyz
@@ -169,8 +170,8 @@ def generate_launch_description():
             "hand_deadband_m": 0.003,
             "max_total_delta_m": 0.30,
             "max_cmd_step_m": 0.005,  # was 0.02 — smaller steps reduce P-controller chase distance
-            "x_min": 0.10,
-            "x_max": 0.80,
+            "x_min": -0.80,
+            "x_max": -0.10,
             "y_min": -0.50,
             "y_max":  0.50,
             "z_min": 0.05,
@@ -250,8 +251,8 @@ def generate_launch_description():
             # ---- Canvas plane constraint ----
             # canvas_stop_plane_x: hard forward limit (base_link X) in normal mode
             # canvas_touch_plane_x: forward limit when pen-down trigger is held
-            "canvas_stop_plane_x": 0.45,
-            "canvas_touch_plane_x": 0.47,
+            "canvas_stop_plane_x": -0.42,
+            "canvas_touch_plane_x": -0.46,
             "pen_down_topic": "/unity/pen_down",
 
             # ---- Mode manager topic names (change only if remapped) ----
@@ -324,8 +325,24 @@ def generate_launch_description():
         }],
     )
 
+    canvas_pkg = FindPackageShare("canvas_pose_detector")
+
+    workspace_cam = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([canvas_pkg, "launch", "workspace_camera.launch.py"])
+        ),
+        launch_arguments={
+            "width":       LaunchConfiguration("cam_width"),
+            "height":      LaunchConfiguration("cam_height"),
+            "fps":         LaunchConfiguration("cam_fps"),
+            "open_viewer": "false",
+        }.items(),
+        condition=IfCondition(LaunchConfiguration("workspace_cam")),
+
+    )
+
     return LaunchDescription([
-        DeclareLaunchArgument("ur_type",   default_value="ur3e"),
+        DeclareLaunchArgument("ur_type",   default_value="ur3"),
         DeclareLaunchArgument("robot_ip",  default_value="127.0.0.1"),
         DeclareLaunchArgument("use_fake_hardware", default_value="true"),
         DeclareLaunchArgument(
@@ -336,6 +353,11 @@ def generate_launch_description():
         DeclareLaunchArgument("ros_tcp_port", default_value="10000"),
         DeclareLaunchArgument("moveit_launch_rviz", default_value="false"),
         DeclareLaunchArgument("debug_ee_forward",   default_value="false"),
+        DeclareLaunchArgument("workspace_cam",  default_value="false",
+            description="Start workspace RealSense camera. Set true only when connected."),
+        DeclareLaunchArgument("cam_width",      default_value="424"),
+        DeclareLaunchArgument("cam_height",     default_value="240"),
+        DeclareLaunchArgument("cam_fps",        default_value="6"),
 
         ur_control,
         ros_tcp_server,
@@ -345,4 +367,5 @@ def generate_launch_description():
         authority_filter_servo,
         pose_error_to_twist,
         servo_auto_start,
+        workspace_cam,
     ])
