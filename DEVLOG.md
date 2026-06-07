@@ -133,3 +133,60 @@ Y and Z are unchanged (0.131, 0.150). The joint change pulls the EE back ~5.6 cm
 **Fix:** Virtual Z push increased to 0.30 m (`stopPlaneRosX − 0.30`). Scaled delta now overshoots touch plane; the plane clamp brings robot exactly to −0.46. pen_down stays trigger-gated in both NORMAL and PRECISION (no behaviour change between modes).
 
 File changed: `TeleopModeController.cs` (`EnterPrecision()`).
+
+---
+
+## Phase 7 — PRECISION Polish + Base=90° Analysis (May 2026)
+
+### PRECISION entry gate widened
+
+Entry was gated on EE being at or past the stop plane (ROS X ≤ −0.41). Too tight in practice — had to be very close to the canvas to enter. Widened by increasing `stopPlaneTolerance` from 0.01 → 0.03, making the gate at ROS X ≤ −0.39.
+
+File changed: `TeleopModeController.cs` (`stopPlaneTolerance`).
+
+### PRECISION A button made global
+
+Previously gated on EE position (had to be near canvas to enter PRECISION). Removed the positional check — A button now enters PRECISION from anywhere as long as a valid EE pose has been received. Rationale: user may want fine control at any position, not just near the canvas.
+
+File changed: `TeleopModeController.cs` (removed `atPlane` check, line 72–74).
+
+### CanvasPainter raycast fix
+
+Drawing was broken after CommandBox/ActualBox were rescaled to 0.05. Root cause: `Physics.Raycast` skips colliders the ray starts inside of. At the old larger scale, the ray origin (3 cm offset from CommandBox) sat inside the CommandBox collider → collider was skipped → canvas hit correctly. At scale 0.05, the collider shrank to ±2.5 cm — ray origin now starts outside → Physics.Raycast detected CommandBox first → drawing broke.
+
+Fix: switched to `Collider.Raycast()` on the canvas collider directly. Only the canvas collider is tested regardless of any other colliders in the scene.
+
+File changed: `CanvasPainter.cs` (Unity repo).
+
+### Workspace camera (ROSCameraDisplay)
+
+Added `ROSCameraDisplay.cs` to Unity — subscribes to `/workspace_cam/color/image_raw/compressed`, decodes in `LateUpdate()` (after all control `Update()` calls), rate-limited to 15 fps. Uses URP-compatible shader (`Universal Render Pipeline/Unlit`). Auto-creates a quad above the canvas in world space. Zero impact on control pipeline.
+
+ROS side: `workspace_camera.launch.py` added as optional include in `ur3e_unity_bridge_servo.launch.py` (`workspace_cam:=false` by default).
+
+### Base=90° analysis — documented, not implemented
+
+Space constraints require changing the robot base joint from 180° to 90°. Full coordinate remapping derived using the same methodology as the 0°→180° change (`docs/coordinate_and_wiring_fixes.md`).
+
+**Key finding from git history:** 0°→180° kept X as the forward axis, only signs changed. 180°→90° changes the forward axis from X to Y — magnitudes stay the same, axis swaps.
+
+**Changes required (not yet applied — current machine stays at 180°):**
+
+*C++ filter (`unity_authority_filter_servo.cpp`):*
+- `unity_to_ros_delta`: `make_point(-u.z, u.x, u.y)` → `make_point(-u.x, -u.z, u.y)`
+- `unity_to_ros_basis`: row signs change to `[[-1,0,0],[0,0,-1],[0,1,0]]`
+- Canvas plane clamp: `cmd_pos.x` → `cmd_pos.y`, params renamed `canvas_stop_plane_y` / `canvas_touch_plane_y`
+- Workspace clamp: x uses y_min_/y_max_ (side), y uses x_min_/x_max_ (forward reach)
+
+*Unity C# (TeleopHandPosePublisher, CommandSubscriber, ActualEePoseSubscriber):*
+- `RosToUnityPosition`: `(ros.y, ros.z, -ros.x)` → `(-ros.x, ros.z, -ros.y)`
+- `RosToUnityRotation`: `(-q.y, -q.z, q.x, q.w)` → `(q.x, -q.z, q.y, q.w)`
+
+*Launch file:*
+- `canvas_stop_plane_x: -0.42` → `canvas_stop_plane_y: -0.42`
+- `x_min/x_max` ↔ `y_min/y_max` values swap
+- `canvas_normal_xyz: [-1,0,0]` → `[0,-1,0]`
+
+*No change needed:* PRECISION virtual Z push formula, XR snap direction, joystick axes, canvas plane values (physical measurement — re-tune after new setup arranged).
+
+**Decision:** 180° configuration remains the confirmed working baseline. 90° changes held until new physical setup is ready.

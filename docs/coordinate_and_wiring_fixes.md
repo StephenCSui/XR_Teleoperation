@@ -158,9 +158,10 @@ When entering PRECISION mode the script sets a virtual hand position so the filt
 _virtualHandPos.z = stopPlaneRosX - 0.05f;
 // → Unity Z = −0.50 → filter sees ROS X = +0.50 (away from canvas, completely wrong)
 
-// After — correct sign
-_virtualHandPos.z = -(stopPlaneRosX - 0.05f);
-// → Unity Z = +0.50 → filter sees ROS X = −0.50 (past touch plane at −0.47, correct)
+// After — correct sign, overshoot so filter clamps at touch plane
+_virtualHandPos.z = -(stopPlaneRosX - 0.30f);
+// → Unity Z = +0.72 → filter sees ROS X = −0.72 → clamped to canvas_touch_plane_x (−0.46)
+// 0.30 m overshoot chosen in Phase 6 so scaled delta always clears the stop→touch gap
 ```
 
 ---
@@ -185,11 +186,27 @@ Holding the right trigger shifts the EE forward clamp from `canvas_stop_plane_x`
 
 ```python
 # ur3e_unity_bridge_servo.launch.py
-"canvas_stop_plane_x":  -0.45,   # normal forward limit
-"canvas_touch_plane_x": -0.49,   # trigger-held limit — 4 cm press
+"canvas_stop_plane_x":  -0.42,   # normal forward limit (shifted 3 cm closer in Phase 6)
+"canvas_touch_plane_x": -0.46,   # trigger-held limit — 4 cm press
 ```
 
-Reach when trigger held = **4 cm** (previously 2 cm).
+Reach when trigger held = **4 cm** (gap unchanged; planes moved 3 cm closer to robot in Phase 6).
+
+---
+
+## Known discrepancy — C++ debug helper
+
+`unity_authority_filter_servo.cpp` contains a static `ros_to_unity_position()` helper (lines 112–115) used only for the `[STATE]` debug log (`ee_u` / `cmd_u` fields). It still uses the old base=0° formula:
+
+```cpp
+// Current — old base=0° formula, debug log only
+return make_point(-r.y, r.z, r.x);   // (-ROS.y, ROS.z, ROS.x)
+
+// Should be base=180° to match Unity scripts:
+// return make_point(r.y, r.z, -r.x);  // (+ROS.y, ROS.z, -ROS.x)
+```
+
+No control impact — this function is not in any command path. The Unity-frame positions printed in the STATE log are in the wrong frame.
 
 ---
 

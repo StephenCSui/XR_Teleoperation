@@ -1,0 +1,54 @@
+digraph ControlPipeline {
+    graph [
+        rankdir=TB
+        fontname="Helvetica"
+        fontsize=12
+        splines=ortho
+        nodesep=0.7
+        ranksep=0.6
+        bgcolor="#F5F6FA"
+        label="XR Teleoperation — Control Pipeline"
+        labelloc=t
+        labeljust=c
+        fontsize=16
+    ]
+    node [fontname="Helvetica" fontsize=11 style="filled,rounded" shape=box margin="0.2,0.15"]
+    edge [fontname="Helvetica" fontsize=9 color="#444444"]
+
+    Controller [label="Quest 2 Controller Pose" shape=ellipse fillcolor="#2471A3" fontcolor=white]
+
+    HandPub [label="TeleopHandPosePublisher.cs" fillcolor="#1E8449" fontcolor=white]
+
+    Filter [label="unity_authority_filter_servo  (C++ ROS node)" fillcolor="#E8571A" fontcolor=white]
+
+    Anchor   [label="Anchor latch\n150 ms settle" shape=plaintext fontsize=10]
+    Deadband [label="Deadband\n3 mm position / 0.5° orientation" shape=plaintext fontsize=10]
+    Workspace[label="Workspace clamping\nx: -0.80 to -0.10 m\ny: ±0.50 m  z: 0.05–0.70 m" shape=plaintext fontsize=10]
+    Step     [label="Step limiting\n5 mm/tick  /  5°/tick" shape=plaintext fontsize=10]
+    Relative [label="Relative orientation\ncontrol" shape=plaintext fontsize=10]
+
+    PeToTwist [label="pose_error_to_twist  (Python ROS node)" fillcolor="#E8A020" fontcolor=white]
+
+    PGains [label="P-controller\nlinear gain 2.0 — max 0.08 m/s\nangular gain 3.0 — max 0.6 rad/s\nposition deadband 5 mm" shape=plaintext fontsize=10]
+
+    Servo      [label="MoveIt Servo" fillcolor="#922B21" fontcolor=white]
+    Controller2[label="forward_velocity_controller" fillcolor="#6C3483" fontcolor=white]
+    Robot      [label="UR3e Joints" shape=ellipse fillcolor="#2471A3" fontcolor=white]
+
+    Controller -> HandPub
+    HandPub -> Filter [label="/unity/hand_pose  (PoseStamped, 60 Hz)\n/unity/teleop_enabled  (Bool)"]
+
+    Filter -> Anchor   [style=dashed arrowhead=none]
+    Filter -> Deadband [style=dashed arrowhead=none]
+    Filter -> Workspace[style=dashed arrowhead=none]
+    Filter -> Step     [style=dashed arrowhead=none]
+    Filter -> Relative [style=dashed arrowhead=none]
+
+    Filter -> PeToTwist [label="/unity/command_pose  (PoseStamped)"]
+
+    PeToTwist -> PGains [style=dashed arrowhead=none]
+
+    PeToTwist -> Servo [label="/servo_node/delta_twist_cmds  (TwistStamped)"]
+    Servo -> Controller2
+    Controller2 -> Robot
+}

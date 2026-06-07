@@ -1,0 +1,98 @@
+digraph XRTeleop {
+    graph [
+        rankdir=TB
+        fontname="Helvetica"
+        fontsize=12
+        splines=ortho
+        nodesep=0.6
+        ranksep=0.7
+        bgcolor="#F5F6FA"
+        label="XR Teleoperation — System Architecture"
+        labelloc=t
+        labeljust=c
+        fontsize=16
+    ]
+    node [fontname="Helvetica" fontsize=11 style="filled,rounded" shape=box margin="0.2,0.15"]
+    edge [fontname="Helvetica" fontsize=9 color="#444444"]
+
+    // ── Unity / Quest 2 ────────────────────────────────────────
+    subgraph cluster_unity {
+        label="Unity  /  Quest 2 VR  (Android APK)"
+        fontsize=13 fontcolor="#1A5276"
+        style="filled,rounded"
+        fillcolor="#D6EAF8"
+        color="#2471A3"
+        penwidth=2
+
+        HandPublisher  [label="TeleopHandPosePublisher.cs"  fillcolor="#2471A3" fontcolor=white]
+        ModeController [label="TeleopModeController.cs"     fillcolor="#2471A3" fontcolor=white]
+        CanvasPainter  [label="CanvasPainter.cs"            fillcolor="#2471A3" fontcolor=white]
+        CmdSubscriber  [label="CommandSubscriber.cs\n(visualisation)" fillcolor="#2471A3" fontcolor=white]
+        EeSubscriber   [label="ActualEePoseSubscriber.cs\n(visualisation)" fillcolor="#2471A3" fontcolor=white]
+        DebugHUD       [label="TeleopDebugHUD\n(in-headset readout)" fillcolor="#2471A3" fontcolor=white]
+    }
+
+    // ── ROS-TCP Bridge ─────────────────────────────────────────
+    Bridge [
+        label="ROS-TCP-Connector\n(WiFi · port 10000)"
+        fillcolor="#6C3483" fontcolor=white
+        shape=box style="filled,rounded"
+    ]
+
+    // ── ROS 2 Stack ────────────────────────────────────────────
+    subgraph cluster_ros {
+        label="ROS 2  —  Ubuntu 22.04 Humble"
+        fontsize=13 fontcolor="#7D6608"
+        style="filled,rounded"
+        fillcolor="#FEF9E7"
+        color="#B7950B"
+        penwidth=2
+
+        EeTf      [label="ee_tf_to_pose\n(tool0 TF → /robot/ee_pose)" fillcolor="#B7950B" fontcolor=white]
+        ModeMan   [label="teleop_mode_manager\n(mode · proximity)"      fillcolor="#B7950B" fontcolor=white]
+        Filter    [label="unity_authority_filter_servo  (C++)\nframe conversion · workspace clamp\ndeadband · canvas plane · mode blend"
+                   fillcolor="#BA4A00" fontcolor=white]
+        PeToTwist [label="pose_error_to_twist\n(P-controller)"          fillcolor="#B7950B" fontcolor=white]
+        ServoAuto [label="servo_auto_start"                             fillcolor="#B7950B" fontcolor=white]
+        Servo     [label="MoveIt Servo"                                 fillcolor="#922B21" fontcolor=white]
+        Controller[label="forward_velocity_controller"                  fillcolor="#922B21" fontcolor=white]
+    }
+
+    // ── Robot ──────────────────────────────────────────────────
+    Robot [
+        label="UR3e  (Universal Robots)"
+        fillcolor="#1E8449" fontcolor=white
+        shape=box style="filled,rounded"
+    ]
+
+    // ── Edges ──────────────────────────────────────────────────
+
+    // Unity → Bridge
+    HandPublisher  -> Bridge [label="/unity/hand_pose\n/unity/teleop_enabled"]
+    ModeController -> Bridge [label="/unity/pen_down"]
+
+    // Bridge → Filter
+    Bridge -> Filter [label="/unity/hand_pose\n/unity/teleop_enabled\n/unity/pen_down" color="#6C3483"]
+
+    // Supporting nodes → Filter
+    EeTf    -> Filter  [label="/robot/ee_pose"            style=dashed color="#888"]
+    ModeMan -> Filter  [label="/teleop_mode/active_mode\n/teleop_mode/canvas_proximity" style=dashed color="#888"]
+
+    // Filter → downstream
+    Filter    -> PeToTwist [label="/unity/command_pose"]
+    PeToTwist -> Servo     [label="/servo_node/delta_twist_cmds"]
+    Servo     -> Controller
+    Controller -> Robot
+
+    // servo_auto_start watches robot and switches controller
+    ServoAuto -> Controller [label="switch on\nprogram_running" style=dashed color="#888"]
+
+    // Feedback to Unity
+    EeTf -> Bridge [label="/robot/ee_pose (feedback)" style=dashed color="#888888"]
+    Filter -> Bridge [label="/unity/command_pose (feedback)" style=dashed color="#888888"]
+
+    // Bridge → Unity visualisation
+    Bridge -> CmdSubscriber [style=dashed color="#888888"]
+    Bridge -> EeSubscriber  [style=dashed color="#888888"]
+    Bridge -> DebugHUD      [style=dashed color="#888888"]
+}

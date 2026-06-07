@@ -225,13 +225,13 @@ Unity and ROS use different coordinate systems. All conversions are applied at t
 
 | Axis | Unity → ROS |
 |---|---|
-| Unity X | → ROS -Y |
+| Unity X | → ROS +Y |
 | Unity Y | → ROS +Z |
-| Unity Z | → ROS +X |
+| Unity Z | → ROS −X |
 
-Position: `RosToUnityPosition(ros) = new Vector3(-ros.y, ros.z, ros.x)`
+Position: `RosToUnityPosition(ros) = new Vector3(ros.y, ros.z, -ros.x)`
 
-Rotation (Unity → ROS quaternion): `(-rosQ.y, rosQ.z, rosQ.x, -rosQ.w)`
+Rotation (Unity → ROS quaternion): `(-rosQ.y, -rosQ.z, rosQ.x, rosQ.w)`
 
 ---
 
@@ -250,7 +250,7 @@ No rebuild is required — parameters are read at launch time.
 | `max_cmd_step_m` | 0.005 | Max command position step per tick (m) |
 | `max_cmd_angle_step_deg` | 5.0 | Max command orientation step per tick (°) |
 | `position_scale` | 1.0 | Uniform position scaling |
-| `x_min / x_max` | 0.10 / 0.80 | Workspace X bounds in base_link (m) |
+| `x_min / x_max` | -0.80 / -0.10 | Workspace X bounds in base_link (m) |
 | `anchor_settle_ms` | 150 | Settle time after teleop enable before anchor latches |
 
 ### P-controller (`pose_error_to_twist`)
@@ -259,8 +259,8 @@ No rebuild is required — parameters are read at launch time.
 |---|---|---|
 | `linear_gain` | 2.0 | Position error → linear speed gain |
 | `max_linear_speed` | 0.08 | Speed cap (m/s) |
-| `angular_gain` | 2.0 | Orientation error → angular speed gain |
-| `max_angular_speed` | 0.4 | Angular speed cap (rad/s) |
+| `angular_gain` | 3.0 | Orientation error → angular speed gain |
+| `max_angular_speed` | 0.6 | Angular speed cap (rad/s) |
 | `position_deadband_m` | 0.002 | Don't move if error below this (m) |
 
 ---
